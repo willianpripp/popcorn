@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "_nav.html" import nav, tmdb_picker with context %}
+{% block content %}
+{{ nav(base, tab) }}
+
+<form method="post" action="{{ base }}/request" class="addcard" id="reqform">
+  <input type="hidden" name="tmdb_id"><input type="hidden" name="kind">
+  {{ tmdb_picker(base, "reqform", "Request a movie or series…") }}
+  <button type="submit" class="go" disabled>Request</button>
+</form>
+
+<main class="grid">
+  {% for r in rows %}
+  <div class="poster {% if r.status == 'available' %}have{% endif %}">
+    {% if r.poster %}<img src="{{ r.poster }}" alt="" loading="lazy">
+    {% else %}<div class="noart">🎬</div>{% endif %}
+    <div class="pt">
+      <div class="t">{{ r.name }}</div>
+      <div class="m">{{ r.year or '' }} · {{ r.kind }}{% if r.genres %} · {{ r.genres.split(',')[0] }}{% endif %}</div>
+      {% if r.status == 'available' %}
+      <span class="badge b-have">on Jellyfin</span>
+      {% else %}
+      <span class="badge b-want">requested · {{ r.requested_by }}</span>
+      {% endif %}
+      <form method="post" action="{{ base }}/request/{{ r.id }}/dismiss" class="dismiss">
+        <button title="Remove from the queue">×</button>
+      </form>
+    </div>
+  </div>
+  {% else %}
+  <p class="empty">Nothing requested yet. Search above; if it is already on
+  Jellyfin the card says so instead of queueing it.</p>
+  {% endfor %}
+</main>
+
+<script src="{{ base }}/static/picker.js"></script>
+{% endblock %}

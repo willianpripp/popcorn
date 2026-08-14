@@ -1,0 +1,164 @@
+/* Popcorn. Phone-first, desktop gets the wider grid. Household dark palette. */
+
+:root {
+  --ground: #141920; --surface: #1B222C; --raised: #222C38;
+  --text: #E8ECF1; --muted: #93A0B0; --dim: #6E7B8A;
+  --accent: #E8A33D; --ok: #4FBF73;
+  --line: rgba(255,255,255,.09); --line-strong: rgba(255,255,255,.18);
+  --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0 auto; background: var(--ground); color: var(--text);
+  font-family: var(--sans); font-size: 16px; line-height: 1.5;
+  padding: 14px 14px 80px; max-width: 1100px;
+}
+
+.top { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
+.brand { font-weight: 800; font-size: 20px; }
+.tabs { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+.tabs a { padding: 7px 13px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 14px; }
+.tabs a.on { background: var(--raised); color: var(--text); font-weight: 600; }
+
+select, input, button {
+  font: inherit; color: var(--text); background: var(--surface);
+  border: 1px solid var(--line-strong); border-radius: 10px;
+}
+input, select { padding: 10px 12px; }
+.go {
+  padding: 10px 18px; background: var(--accent); color: #1A1408;
+  font-weight: 700; border: 0; cursor: pointer;
+}
+.go:disabled { opacity: .4; cursor: default; }
+
+/* --- picker ---------------------------------------------------------------- */
+.addcard, .logbox { margin-bottom: 18px; }
+.addcard { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+.picker { flex: 1; min-width: 240px; position: relative; }
+.pickq { width: 100%; }
+.pickresults {
+  position: absolute; z-index: 5; left: 0; right: 0; top: 100%;
+  background: var(--raised); border: 1px solid var(--line-strong);
+  border-radius: 10px; overflow: hidden; margin-top: 4px;
+}
+.pickitem {
+  display: flex; gap: 10px; align-items: center; width: 100%;
+  padding: 8px 10px; background: none; border: 0; border-bottom: 1px solid var(--line);
+  color: var(--text); cursor: pointer; text-align: left; font-size: 14px;
+}
+.pickitem:hover { background: var(--surface); }
+.pickitem img { width: 28px; height: 42px; object-fit: cover; border-radius: 4px; }
+.pickitem .ph { width: 28px; text-align: center; }
+.pickitem small { color: var(--dim); }
+.picked { color: var(--ok); font-size: 13px; margin-top: 5px; }
+
+/* --- request grid ----------------------------------------------------------- */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.poster { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; position: relative; }
+.poster.have { border-color: rgba(79,191,115,.5); }
+.poster img { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; }
+.poster .noart { aspect-ratio: 2/3; display: grid; place-items: center; font-size: 34px; background: var(--raised); }
+.poster .pt { padding: 9px 11px 11px; }
+.poster .t { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
+.poster .m { font-size: 11.5px; color: var(--dim); margin-top: 2px; }
+.badge {
+  display: inline-block; font-family: var(--mono); font-size: 9.5px;
+  letter-spacing: .05em; padding: 2px 7px; border-radius: 20px; margin-top: 7px;
+  text-transform: uppercase;
+}
+.b-have { background: rgba(79,191,115,.14); color: var(--ok); }
+.b-want { background: rgba(232,163,61,.14); color: var(--accent); }
+.dismiss { position: absolute; top: 6px; right: 6px; margin: 0; }
+.dismiss button {
+  width: 26px; height: 26px; border-radius: 50%; border: 0; cursor: pointer;
+  background: rgba(0,0,0,.55); color: var(--muted); font-size: 15px; line-height: 1;
+}
+
+/* --- diary ------------------------------------------------------------------ */
+.logbox summary {
+  cursor: pointer; color: var(--accent); font-weight: 600;
+  padding: 10px 4px; -webkit-user-select: none; user-select: none;
+}
+.logform { display: grid; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.logform .lrow { display: flex; gap: 8px; flex-wrap: wrap; }
+.logform .lrow > * { flex: 1; min-width: 110px; }
+.logform .seas { max-width: 160px; }
+
+.month h2 {
+  font-size: 12px; font-family: var(--mono); letter-spacing: .12em;
+  text-transform: uppercase; color: var(--dim); font-weight: 500;
+  margin: 22px 0 6px; border-bottom: 1px solid var(--line); padding-bottom: 6px;
+}
+.logrow {
+  display: flex; align-items: center; gap: 10px; padding: 9px 2px;
+  border-bottom: 1px solid var(--line); font-size: 14.5px; flex-wrap: wrap;
+  position: relative;
+}
+.logrow .t { font-weight: 600; }
+.logrow .stars { color: var(--accent); font-size: 12px; letter-spacing: 1px; }
+.logrow .who, .logrow .date { color: var(--dim); font-size: 12.5px; }
+.logrow .date { margin-left: auto; font-variant-numeric: tabular-nums; }
+.logrow .plat {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .05em;
+  padding: 1.5px 8px; border-radius: 20px; background: var(--raised);
+  color: var(--muted); text-transform: uppercase;
+}
+.logrow .auto {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .08em;
+  padding: 1px 6px; border-radius: 10px; text-transform: uppercase;
+  background: rgba(232,163,61,.12); color: var(--accent);
+}
+.logrow .dismiss { position: static; }
+.logrow .dismiss button { background: var(--raised); }
+.rateform select { padding: 3px 6px; font-size: 12px; }
+
+/* --- recap -------------------------------------------------------------------- */
+.yearpick { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.yearpick a {
+  padding: 5px 12px; border-radius: 18px; text-decoration: none;
+  color: var(--muted); background: var(--surface); border: 1px solid var(--line);
+  font-family: var(--mono); font-size: 13px;
+}
+.yearpick a.on { color: var(--accent); border-color: var(--accent); }
+.wrapt { font-size: clamp(28px, 6vw, 44px); letter-spacing: -.02em; margin: 8px 0 18px; }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin-bottom: 24px; }
+.kpi { background: var(--surface); padding: 14px 16px; }
+.kpi .n { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.kpi .l { font-size: 11px; color: var(--dim); font-family: var(--mono); letter-spacing: .08em; text-transform: uppercase; margin-top: 2px; }
+
+.chart h2, .split h2, .bestof h2 {
+  font-size: 12px; font-family: var(--mono); letter-spacing: .12em;
+  text-transform: uppercase; color: var(--dim); font-weight: 500; margin: 22px 0 10px;
+}
+.bars { display: flex; gap: 6px; align-items: flex-end; height: 110px; }
+.bar { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; height: 100%; }
+.bar .fill { width: 100%; background: var(--accent); border-radius: 4px 4px 0 0; min-height: 2px; opacity: .85; }
+.bar span { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+.split .srow { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; font-size: 14px; }
+.split .srow > span:first-child { width: 90px; flex: 0 0 auto; }
+.sbarwrap { flex: 1; background: var(--raised); border-radius: 6px; height: 10px; }
+.sbar { height: 100%; background: var(--accent); border-radius: 6px; opacity: .85; }
+.split .sn { font-family: var(--mono); font-size: 12px; color: var(--dim); width: 26px; text-align: right; }
+
+.empty { color: var(--dim); }
+
+/* --- login (shared classes with groceries) ------------------------------------ */
+.loginwrap { min-height: 82vh; display: grid; place-items: center; }
+.logincard {
+  width: min(360px, 92vw); background: var(--surface);
+  border: 1px solid var(--line-strong); border-radius: 16px;
+  padding: 28px 26px 22px; text-align: center;
+}
+.loginbrand { font-size: 40px; }
+.logincard h1 { margin: 6px 0 2px; font-size: 24px; }
+.loginsub, .loginmsg { color: var(--muted); font-size: 14px; margin: 4px 0 18px; }
+.logincard form { display: grid; gap: 10px; }
+.logincard input { padding: 12px 14px; width: 100%; }
+.logincard button {
+  padding: 12px; background: var(--accent); color: #1A1408;
+  font-weight: 700; border: 0; border-radius: 10px; cursor: pointer;
+}
+.loginerr { color: #E5714D; font-size: 13.5px; margin: 0; }
+.loginhint { color: var(--dim); font-size: 12px; margin-top: 16px; }

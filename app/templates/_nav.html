@@ -1,0 +1,21 @@
+{% macro nav(base, tab) %}
+<header class="top">
+  <span class="brand">🍿 Popcorn</span>
+  <nav class="tabs">
+    <a href="{{ base }}/" {% if tab == 'want' %}class="on"{% endif %}>Want to watch</a>
+    <a href="{{ base }}/watched" {% if tab == 'watched' %}class="on"{% endif %}>Watched</a>
+    <a href="{{ base }}/recap" {% if tab == 'recap' %}class="on"{% endif %}>Recap</a>
+  </nav>
+</header>
+{% endmacro %}
+
+{% macro tmdb_picker(base, form_id, kindof) %}
+{# Search-as-you-type against TMDB via the server proxy. Picking a result
+   fills the hidden tmdb_id/kind fields of the surrounding form. No pick, no
+   submit: titles always come from TMDB so posters and runtimes are real. #}
+<div class="picker" data-form="{{ form_id }}">
+  <input type="text" class="pickq" placeholder="{{ kindof }}" autocomplete="off">
+  <div class="pickresults"></div>
+  <div class="picked"></div>
+</div>
+{% endmacro %}

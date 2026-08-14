@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "_nav.html" import nav with context %}
+{% block content %}
+{{ nav(base, tab) }}
+
+<div class="yearpick">
+  {% for y in years %}
+  <a href="{{ base }}/recap/{{ y }}" {% if y == year %}class="on"{% endif %}>{{ y }}</a>
+  {% endfor %}
+</div>
+
+<h1 class="wrapt">{{ year }}, watched.</h1>
+
+<div class="kpis">
+  <div class="kpi"><div class="n">{{ count }}</div><div class="l">titles</div></div>
+  <div class="kpi"><div class="n">{{ hours }}h</div><div class="l">screen time</div></div>
+  <div class="kpi"><div class="n">{{ plat[0][0] if plat else '—' }}</div><div class="l">top platform</div></div>
+  <div class="kpi"><div class="n">{{ genre[0][0] if genre else '—' }}</div><div class="l">top genre</div></div>
+</div>
+
+{% if months %}
+<section class="chart">
+  <h2>By month</h2>
+  <div class="bars">
+    {% set peak = months.values() | max %}
+    {% for m in range(1, 13) %}
+    <div class="bar" title="{{ months.get(m, 0) }}">
+      <div class="fill" style="height: {{ (months.get(m, 0) / peak * 100) | round }}%"></div>
+      <span>{{ 'JFMAMJJASOND'[m-1] }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if plat %}
+<section class="split">
+  <h2>Where</h2>
+  {% for name, n in plat %}
+  <div class="srow"><span>{{ name }}</span>
+    <div class="sbarwrap"><div class="sbar" style="width: {{ (n / count * 100) | round }}%"></div></div>
+    <span class="sn">{{ n }}</span></div>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if best %}
+<section class="bestof">
+  <h2>Best rated</h2>
+  {% for b in best %}
+  <div class="logrow">
+    <span class="t">{{ b.name }}{% if b.season %} · S{{ b.season }}{% endif %}</span>
+    <span class="stars">{{ '★' * (rated(b) | round | int) }}</span>
+    <span class="date">{{ b.watched_on.strftime('%b') }}</span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if not count %}<p class="empty">Nothing watched in {{ year }} yet.</p>{% endif %}
+{% endblock %}

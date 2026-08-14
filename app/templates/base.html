@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#141920">
+<title>{% block title %}Popcorn{% endblock %}</title>
+<link rel="icon" href="{{ base }}/static/icon-192.png">
+<link rel="apple-touch-icon" href="{{ base }}/static/icon-192.png">
+{# The manifest is what makes "Add to Home Screen" install this like an app.
+   start_url is relative so the same file works on the LAN mount (/) and the
+   public mount (/groceries/). #}
+<link rel="manifest" href="{{ base }}/static/manifest.webmanifest">
+<link rel="stylesheet" href="{{ base }}/static/style.css">
+</head>
+<body>
+{% block content %}{% endblock %}
+</body>
+</html>

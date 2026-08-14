@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Popcorn · sign in{% endblock %}
+{% block content %}
+<div class="loginwrap">
+  <div class="logincard">
+    <div class="loginbrand">🍿</div>
+    <h1>Popcorn</h1>
+    {% if not configured %}
+    <p class="loginmsg">Not configured for visitors yet. From home or the
+    tailnet this page never appears; if you are seeing it there, tell Willian.</p>
+    {% else %}
+    <p class="loginsub">You're outside the house, so: who are you?</p>
+    <form method="post" action="{{ base }}/login">
+      <input type="hidden" name="next" value="{{ next }}">
+      <input name="who" placeholder="name" autocomplete="username" required autofocus>
+      <input name="password" type="password" placeholder="password"
+             autocomplete="current-password" required>
+      {% if error %}<p class="loginerr">{{ error }}</p>{% endif %}
+      <button type="submit">Enter</button>
+    </form>
+    <p class="loginhint">Same name and password as the calendar and Groceries. One login
+    covers them all.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

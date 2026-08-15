@@ -70,29 +70,76 @@ def in_library(idx, title) -> bool:
     return key in idx or (title["name"].strip().lower(), None) in idx
 
 
-def check_one_request(q, q1, title):
+def _season_progress(idx, r):
+    """For a season-specific series request: (have, want) episode counts.
+    `want` comes from TMDB's season list; `have` from Jellyfin. A season is
+    available only when have >= want, so one Dexter episode does not count as
+    "on Jellyfin" for the season (Willian, 2026-08-15)."""
+    key = (r["name"].strip().lower(), r["year"])
+    item = idx.get(key) or idx.get((r["name"].strip().lower(), None))
+    have = 0
+    if item:
+        eps = jf(f"/Shows/{item['Id']}/Episodes", season=r["season"])["Items"]
+        have = len(eps)
+    want = 0
+    if r.get("tmdb_id"):
+        try:
+            import main
+            detail = main.tmdb(f"/tv/{r['tmdb_id']}")
+            want = next((sn.get("episode_count", 0) for sn in detail.get("seasons", [])
+                         if sn.get("season_number") == r["season"]), 0)
+        except Exception:
+            want = 0
+    return have, want
+
+
+def _request_ready(idx, r):
+    """available?, progress-text"""
+    if r["season"] is None:
+        return in_library(idx, {"name": r["name"], "year": r["year"]}), ""
+    have, want = _season_progress(idx, r)
+    if want:
+        return have >= want, f"{have}/{want} eps"
+    # TMDB silent about the season: fall back to "any episodes exist"
+    return have > 0, (f"{have} eps" if have else "")
+
+
+def check_one_request(q, q1, title, season=None):
     """Inline check on add, so the badge is honest immediately."""
     try:
-        if in_library(library_index(), title):
+        idx = library_index()
+        r = {"name": title["name"], "year": title["year"],
+             "tmdb_id": title.get("tmdb_id"), "season": season}
+        ready, progress = _request_ready(idx, r)
+        if ready:
             q("update requests set status = 'available', available_at = now()"
-              " where title_id = %s and status = 'open'", (title["id"],))
+              " where title_id = %s and coalesce(season, 0) = %s and status = 'open'",
+              (title["id"], season or 0))
+        elif progress:
+            q("update requests set progress = %s where title_id = %s"
+              " and coalesce(season, 0) = %s", (progress, title["id"], season or 0))
     except Exception:
         pass
 
 
 def sync_arrivals(q, q1):
-    rows = q("""select r.id, r.requested_by, t.name, t.year, t.id title_id
+    rows = q("""select r.id, r.season, r.requested_by, t.name, t.year,
+                       t.tmdb_id, t.id title_id
                 from requests r join titles t on t.id = r.title_id
                 where r.status = 'open'""")
     if not rows:
         return
     idx = library_index()
     for r in rows:
-        if in_library(idx, {"name": r["name"], "year": r["year"]}):
-            q("update requests set status = 'available', available_at = now()"
-              " where id = %s", (r["id"],))
+        ready, progress = _request_ready(idx, r)
+        if ready:
+            q("update requests set status = 'available', available_at = now(),"
+              " progress = '' where id = %s", (r["id"],))
+            label = r["name"] + (f" S{r['season']}" if r["season"] else "")
             telegram(r["requested_by"],
-                     "🍿 %s is on Jellyfin now (you asked for it)" % r["name"])
+                     "🍿 %s is on Jellyfin now (you asked for it)" % label)
+        else:
+            q("update requests set progress = %s where id = %s", (progress, r["id"]))
 
 
 # --- jellyfin finishes --------------------------------------------------------------
@@ -181,8 +228,6 @@ def sync_cinema(q, q1):
     today = str(datetime.date.today())
     for ev in events:
         key = f"cal:{ev['id']}"
-        if q1("select 1 from watches where source_key = %s", (key,)):
-            continue
         if ev.get("date", "9999") > today:
             continue  # future plans are not memories yet
         cat = (ev.get("category") or "cinema").lower()
@@ -190,15 +235,24 @@ def sync_cinema(q, q1):
             t = _ensure_title(q, q1, ev["title"], None, "movie", 120)
             q("""insert into watches (title_id, platform, watched_on, who,
                  source, source_key) values (%s, 'Cinema', %s, %s, 'calendar', %s)
-                 on conflict (source_key) do nothing""",
+                 on conflict (source_key) do update
+                 set title_id = excluded.title_id,
+                     watched_on = excluded.watched_on, who = excluded.who""",
               (t["id"], ev["date"], ev.get("owner") or "Both", key))
         else:
             t = _ensure_title(q, q1, ev["title"], None, "movie", 0)
+            # UPSERT, not insert-once: editing the event (dates stretched,
+            # title fixed, owner changed) updates the diary entry in place.
             q("""insert into watches (title_id, platform, watched_on, who,
-                 source, source_key, activity) values (%s, 'Live', %s, %s,
-                 'calendar', %s, %s)
-                 on conflict (source_key) do nothing""",
-              (t["id"], ev["date"], ev.get("owner") or "Both", key, cat))
+                 source, source_key, activity, days) values (%s, 'Live', %s,
+                 %s, 'calendar', %s, %s, %s)
+                 on conflict (source_key) do update
+                 set title_id = excluded.title_id,
+                     watched_on = excluded.watched_on,
+                     who = excluded.who, activity = excluded.activity,
+                     days = excluded.days""",
+              (t["id"], ev["date"], ev.get("owner") or "Both", key, cat,
+               int(ev.get("days") or 1)))
 
 
 async def loop(q, q1):

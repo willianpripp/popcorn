@@ -56,12 +56,21 @@ create table if not exists titles (
 create table if not exists requests (
     id serial primary key,
     title_id int not null references titles(id),
+    -- null = the whole thing; a number = that season only ("I saw S1 and S2,
+    -- bring me S3"), which also makes availability season-aware
+    season int,
     requested_by text not null default '',
     requested_at timestamptz not null default now(),
     status text not null default 'open',      -- open | available | dismissed
     available_at timestamptz,
-    unique (title_id)
+    -- poller-written progress for partial seasons, e.g. "3/10 eps"
+    progress text not null default ''
 );
+alter table requests add column if not exists season int;
+alter table requests add column if not exists progress text not null default '';
+alter table requests drop constraint if exists requests_title_id_key;
+create unique index if not exists requests_title_season
+    on requests (title_id, coalesce(season, 0));
 
 create table if not exists watches (
     id serial primary key,
@@ -78,9 +87,12 @@ create table if not exists watches (
     -- attended events from the calendar (concert/sports/travel/...): the
     -- category name, lowercase; empty for watched screen content
     activity text not null default '',
+    -- length in days for attended events (a week in Pensacola counts as 7)
+    days int not null default 1,
     created_at timestamptz not null default now()
 );
 alter table watches add column if not exists activity text not null default '';
+alter table watches add column if not exists days int not null default 1;
 create index if not exists watches_month on watches (watched_on);
 """
 
@@ -203,7 +215,7 @@ def who(request: Request) -> str:
         if "=" in pair:
             addr, _, name = pair.partition("=")
             if addr.strip() == str(ip):
-                return name.strip()
+                return name.strip().capitalize()
     return "Both"
 
 
@@ -223,14 +235,22 @@ def index(request: Request):
 
 
 @app.post("/request")
-def add_request(request: Request, tmdb_id: int = Form(...), kind: str = Form("movie")):
+def add_request(request: Request, tmdb_id: int = Form(...), kind: str = Form("movie"),
+                season: str = Form("")):
     t = upsert_title(tmdb_id, kind)
-    q("insert into requests (title_id, requested_by) values (%s, %s)"
-      " on conflict (title_id) do nothing", (t["id"], who(request)))
+    sn = int(season) if season.strip().isdigit() else None
+    # A dismissed title can be requested again: revive the row rather than
+    # letting the unique constraint eat the request silently (found by
+    # Willian with Constantine, 2026-08-15).
+    q("""insert into requests (title_id, season, requested_by) values (%s, %s, %s)
+         on conflict (title_id, coalesce(season, 0)) do update
+         set status = 'open', requested_by = excluded.requested_by,
+             requested_at = now(), available_at = null
+         where requests.status = 'dismissed'""", (t["id"], sn, who(request)))
     # If Jellyfin already has it, the poller's next pass flags it within
     # minutes; checking inline too keeps the "already there" badge honest
     # on first render.
-    poller.check_one_request(q, q1, t)
+    poller.check_one_request(q, q1, t, sn)
     return RedirectResponse(base_of(request) + "/", status_code=303)
 
 
@@ -315,7 +335,8 @@ def recap(request: Request, year: int):
     acts: dict = {}
     for r in rows:
         if r["activity"]:
-            acts[r["activity"]] = acts.get(r["activity"], 0) + 1
+            c, d = acts.get(r["activity"], (0, 0))
+            acts[r["activity"]] = (c + 1, d + (r["days"] or 1))
     plat: dict = {}
     genre: dict = {}
     for r in rows:
@@ -339,7 +360,7 @@ def recap(request: Request, year: int):
         "request": request, "base": base_of(request), "tab": "recap",
         "year": year, "years": years, "count": sum(1 for r in rows if not r["activity"]), "hours": round(hours),
         "plat": sorted(plat.items(), key=lambda kv: -kv[1]),
-        "acts": sorted(acts.items(), key=lambda kv: -kv[1]),
+        "acts": sorted(acts.items(), key=lambda kv: -kv[1][0]),
         "genre": sorted(genre.items(), key=lambda kv: -kv[1])[:6],
         "best": best, "rated": rated, "months": months,
         "who": who(request)})

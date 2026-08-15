@@ -28,6 +28,8 @@ document.querySelectorAll('.picker').forEach(picker => {
         b.onclick = () => {
           form.querySelector('[name=tmdb_id]').value = it.tmdb_id;
           form.querySelector('[name=kind]').value = it.kind;
+          const sbox = form.querySelector('.seasonbox');
+          if (sbox) sbox.hidden = (it.kind !== 'series');
           picked.innerHTML = `✓ ${it.name} (${it.year || '?'})`;
           res.innerHTML = '';
           qEl.value = it.name;

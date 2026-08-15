@@ -30,7 +30,7 @@
   <h2>{{ month }}</h2>
   {% for w in rows %}
   <div class="logrow">
-    <span class="t">{% if w.activity %}{{ {'concert':'🎤','sports':'🏟️','travel':'✈️','camping':'🏕️','beach':'🏖️'}.get(w.activity, '🎟️') }} {% endif %}{{ w.name }}{% if w.season %} · S{{ w.season }} finished{% endif %}</span>
+    <span class="t">{% if w.activity %}{{ {'concert':'🎤','sports':'🏟️','travel':'✈️','camping':'🏕️','beach':'🏖️'}.get(w.activity, '🎟️') }} {% endif %}{{ w.name }}{% if w.season %} · S{{ w.season }} finished{% endif %}{% if w.days > 1 %} · {{ w.days }} days{% endif %}</span>
     {% if w.activity %}<span class="plat act">{{ w.activity }}</span>
     {% else %}<span class="plat">{{ w.platform }}</span>{% endif %}
     {% if w.rating_willian %}<span class="stars" title="Willian">W {{ '★' * w.rating_willian }}</span>{% endif %}

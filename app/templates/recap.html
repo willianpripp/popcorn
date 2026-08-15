@@ -9,7 +9,7 @@
   {% endfor %}
 </div>
 
-<h1 class="wrapt">{{ year }}, watched.</h1>
+<h1 class="wrapt">{{ year }}, watched and attended.</h1>
 
 <div class="kpis">
   <div class="kpi"><div class="n">{{ count }}</div><div class="l">titles</div></div>
@@ -21,10 +21,10 @@
 {% if acts %}
 <section class="split">
   <h2>Out of the house</h2>
-  {% for name, n in acts %}
+  {% for name, nd in acts %}
   <div class="srow"><span>{{ name }}</span>
-    <div class="sbarwrap"><div class="sbar" style="width: {{ (n / acts[0][1] * 100) | round }}%"></div></div>
-    <span class="sn">{{ n }}</span></div>
+    <div class="sbarwrap"><div class="sbar" style="width: {{ (nd[0] / acts[0][1][0] * 100) | round }}%"></div></div>
+    <span class="sn">{{ nd[0] }}{% if nd[1] > nd[0] %} · {{ nd[1] }}d{% endif %}</span></div>
   {% endfor %}
 </section>
 {% endif %}
@@ -37,7 +37,8 @@
     {% for m in range(1, 13) %}
     <div class="bar" title="{{ months.get(m, 0) }}">
       <div class="fill" style="height: {{ (months.get(m, 0) / peak * 100) | round }}%"></div>
-      <span>{{ 'JFMAMJJASOND'[m-1] }}</span>
+      <span class="mshort">{{ 'JFMAMJJASOND'[m-1] }}</span>
+      <span class="mfull">{{ ['January','February','March','April','May','June','July','August','September','October','November','December'][m-1] }}</span>
     </div>
     {% endfor %}
   </div>

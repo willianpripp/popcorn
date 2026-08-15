@@ -6,6 +6,9 @@
 <form method="post" action="{{ base }}/request" class="addcard" id="reqform">
   <input type="hidden" name="tmdb_id"><input type="hidden" name="kind">
   {{ tmdb_picker(base, "reqform", "Request a movie or series…") }}
+  {# Only shown once a series is picked (picker.js): "I saw S1 and S2, bring
+     me S3". Empty = the whole series. #}
+  <input name="season" class="seasonbox" placeholder="season #" inputmode="numeric" hidden>
   <button type="submit" class="go" disabled>Request</button>
 </form>
 
@@ -15,12 +18,13 @@
     {% if r.poster %}<img src="{{ r.poster }}" alt="" loading="lazy">
     {% else %}<div class="noart">🎬</div>{% endif %}
     <div class="pt">
-      <div class="t">{{ r.name }}</div>
+      <div class="t">{{ r.name }}{% if r.season %} · S{{ r.season }}{% endif %}</div>
       <div class="m">{{ r.year or '' }} · {{ r.kind }}{% if r.genres %} · {{ r.genres.split(',')[0] }}{% endif %}</div>
       {% if r.status == 'available' %}
       <span class="badge b-have">on Jellyfin</span>
       {% else %}
       <span class="badge b-want">requested · {{ r.requested_by }}</span>
+      {% if r.progress %}<span class="badge b-part">{{ r.progress }} on jellyfin</span>{% endif %}
       {% endif %}
       <form method="post" action="{{ base }}/request/{{ r.id }}/dismiss" class="dismiss">
         <button title="Remove from the queue">×</button>

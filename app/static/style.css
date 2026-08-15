@@ -162,3 +162,11 @@ input, select { padding: 10px 12px; }
 }
 .loginerr { color: #E5714D; font-size: 13.5px; margin: 0; }
 .loginhint { color: var(--dim); font-size: 12px; margin-top: 16px; }
+
+.b-part { background: rgba(63,167,201,.14); color: #6FC3DD; }
+.seasonbox { width: 110px; }
+.bar .mfull { display: none; }
+@media (min-width: 720px) {
+  .bar .mshort { display: none; }
+  .bar .mfull { display: block; font-family: var(--mono); font-size: 10px; color: var(--dim); }
+}

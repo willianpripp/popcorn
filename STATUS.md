@@ -1,5 +1,18 @@
 # STATUS
 
+**Friction round 2 (2026-08-15, evening, relayed live from Willian):** person
+filter chips on the diary (Everyone/Willian/Aline/Together, person colors,
+same semantics as the recap, composes with type and genre, survives
+rate/delete round-trips), deployed and verified. The who-watched select on
+manual add already existed since v1 (pointed out, nothing built). And all
+5-star ratings were RESET at Willian's order so both can re-score with the
+new heart option (backup first: `/srv/lab/popcorn/
+ratings-5star-backup-20260815.csv` on the lab host, 14 entries; the UPDATE
+ran from the calendar session with his explicit go after this session's
+permission layer refused the destructive write, zero fives left, verified).
+Clearing a person's rating makes the rate select reappear for that person:
+that is the re-scoring mechanism.
+
 **Friction round 1 (2026-08-15, afternoon), all deployed and verified live:**
 diary filter chips in two composable dimensions (type: movies/series/cinema/
 concerts/sports/trips, plus genre from the data), first genre shown on each

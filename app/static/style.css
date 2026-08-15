@@ -152,7 +152,7 @@ input, select { padding: 10px 12px; }
 .split .srow > span:first-child { width: 90px; flex: 0 0 auto; }
 .sbarwrap { flex: 1; background: var(--raised); border-radius: 6px; height: 10px; }
 .sbar { height: 100%; background: var(--accent); border-radius: 6px; opacity: .85; }
-.split .sn { font-family: var(--mono); font-size: 12px; color: var(--dim); width: 26px; text-align: right; }
+.split .sn { font-family: var(--mono); font-size: 12px; color: var(--dim); min-width: 26px; text-align: right; white-space: nowrap; }
 
 .empty { color: var(--dim); }
 

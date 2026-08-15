@@ -78,8 +78,9 @@ TYPE_CHIPS = [("", "All"), ("movies", "Movies"), ("series", "Series"),
 # "what kind of thing is this", so it is what the diary shows and filters by.
 FIRST_GENRE = "btrim(split_part(t.genres, ',', 1))"
 
-# Recap person filter. Willian and Aline both own the rows watched together,
-# "Together" is only the shared ones.
+# Person filter, same semantics on the recap and the diary (Willian asked for
+# the diary one in friction round 2): Willian and Aline both own the rows
+# watched together, "Together" is only the shared ones.
 WHO_FILTERS = {
     "willian": "w.who in ('Willian', 'Both')",
     "aline": "w.who in ('Aline', 'Both')",
@@ -354,19 +355,25 @@ def _parse_rating(v: str):
 
 def _diary_qs(back: str) -> str:
     """Rating or deleting from a filtered diary must come back to the same
-    filters, so the row forms carry the query string. Only the two known keys
+    filters, so the row forms carry the query string. Only the known keys
     are echoed into the redirect, never whatever else was in the URL."""
     parsed = urllib.parse.parse_qs(back or "")
-    keep = {k: parsed[k][0] for k in ("type", "genre") if parsed.get(k)}
+    keep = {k: parsed[k][0] for k in ("type", "genre", "who") if parsed.get(k)}
     return ("?" + urllib.parse.urlencode(keep)) if keep else ""
 
 
 @app.get("/watched", response_class=HTMLResponse)
 def watched(request: Request, kind_f: str = Query("", alias="type"),
-            genre_f: str = Query("", alias="genre")):
+            genre_f: str = Query("", alias="genre"),
+            who_f: str = Query("", alias="who")):
     kind_f = kind_f.strip().lower()
     genre_f = genre_f.strip()
+    who_f = who_f.strip().lower()
     conds, params = [], []
+    if who_f in WHO_FILTERS:
+        conds.append(WHO_FILTERS[who_f])
+    else:
+        who_f = ""
     if kind_f in TYPE_FILTERS:
         conds.append(TYPE_FILTERS[kind_f])
     else:
@@ -395,8 +402,8 @@ def watched(request: Request, kind_f: str = Query("", alias="type"),
         "request": request, "base": base_of(request), "months": months,
         "platforms": PLATFORMS, "people": PEOPLE, "tab": "watched",
         "today": date.today().isoformat(), "who": who(request),
-        "type_chips": TYPE_CHIPS, "genres": genres,
-        "sel_type": kind_f, "sel_genre": genre_f,
+        "type_chips": TYPE_CHIPS, "genres": genres, "who_chips": WHO_CHIPS,
+        "sel_type": kind_f, "sel_genre": genre_f, "sel_who": who_f,
         "qs": request.url.query})
 
 

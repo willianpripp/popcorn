@@ -1,10 +1,14 @@
 {% extends "base.html" %}
 {% from "_nav.html" import nav, tmdb_picker, person with context %}
 
-{# Chip links are plain GET: each one keeps the other dimension's value, so
-   type and genre compose instead of resetting each other. #}
-{%- macro dlink(t, g) -%}
-{{ base }}/watched{% if t or g %}?{% endif %}{% if t %}type={{ t }}{% endif %}{% if t and g %}&amp;{% endif %}{% if g %}genre={{ g | urlencode }}{% endif %}
+{# Chip links are plain GET: each one keeps the other dimensions' values, so
+   type, genre and person compose instead of resetting each other. #}
+{%- macro dlink(t, g, w) -%}
+{%- set parts = [] -%}
+{%- if t %}{% set _ = parts.append('type=' ~ t) %}{% endif -%}
+{%- if g %}{% set _ = parts.append('genre=' ~ (g | urlencode)) %}{% endif -%}
+{%- if w %}{% set _ = parts.append('who=' ~ w) %}{% endif -%}
+{{ base }}/watched{% if parts %}?{{ parts | join('&') }}{% endif %}
 {%- endmacro -%}
 
 {% block content %}
@@ -37,17 +41,23 @@
    form, so it is never ambiguous what they act on. #}
 <div class="chips">
   {% for val, label in type_chips %}
-  <a class="chip {% if sel_type == val %}on{% endif %}" href="{{ dlink(val, sel_genre) }}">{{ label }}</a>
+  <a class="chip {% if sel_type == val %}on{% endif %}" href="{{ dlink(val, sel_genre, sel_who) }}">{{ label }}</a>
   {% endfor %}
 </div>
 {% if genres | length > 1 %}
-<div class="chips chips-2">
-  <a class="chip {% if not sel_genre %}on{% endif %}" href="{{ dlink(sel_type, '') }}">All genres</a>
+<div class="chips">
+  <a class="chip {% if not sel_genre %}on{% endif %}" href="{{ dlink(sel_type, '', sel_who) }}">All genres</a>
   {% for g in genres %}
-  <a class="chip {% if sel_genre == g %}on{% endif %}" href="{{ dlink(sel_type, g) }}">{{ g }}</a>
+  <a class="chip {% if sel_genre == g %}on{% endif %}" href="{{ dlink(sel_type, g, sel_who) }}">{{ g }}</a>
   {% endfor %}
 </div>
 {% endif %}
+{# "What did each of us watch": same person semantics as the recap. #}
+<div class="chips chips-2">
+  {% for val, label, cls in who_chips %}
+  <a class="chip {{ cls }} {% if sel_who == val %}on{% endif %}" href="{{ dlink(sel_type, sel_genre, val) }}">{{ label }}</a>
+  {% endfor %}
+</div>
 
 {% for month, rows in months.items() %}
 <section class="month">
@@ -88,7 +98,7 @@
   {% endfor %}
 </section>
 {% else %}
-{% if sel_type or sel_genre %}
+{% if sel_type or sel_genre or sel_who %}
 <p class="empty">Nothing in the diary matches this filter.
 <a href="{{ base }}/watched">Show everything</a>.</p>
 {% else %}

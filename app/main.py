@@ -37,7 +37,25 @@ DSN = os.environ.get("POP_DSN", "postgresql://popcorn:popcorn@db:5432/popcorn")
 TMDB_KEY = os.environ.get("POP_TMDB_KEY", "")
 IMG = "https://image.tmdb.org/t/p/w342"
 
-PLATFORMS = ["Jellyfin", "Cinema", "Netflix", "AppleTV", "Prime", "Disney+", "Other"]
+PLATFORMS = ["Jellyfin", "Cinema", "Netflix", "AppleTV", "Prime", "Disney+",
+             "Hulu", "Peacock", "HBO Max", "Crunchyroll", "Other"]
+
+# The household's actual subscriptions (Willian, 2026-08-15). The rule they
+# encode: if a picked title streams on one of these, it goes on the watchlist
+# with that service's name; if nowhere the family already pays for, it becomes
+# a Jellyfin request. Matched by substring against TMDB's US flatrate
+# provider names, lowercase.
+MY_SERVICES = {
+    "netflix": "Netflix",
+    "peacock": "Peacock",
+    "disney": "Disney+",
+    "hulu": "Hulu",
+    "apple tv": "Apple TV",
+    "hbo max": "HBO Max",
+    "max ": "HBO Max",
+    "amazon prime": "Prime Video",
+    "crunchyroll": "Crunchyroll",
+}
 PEOPLE = ["Willian", "Aline", "Both"]
 
 SCHEMA = """
@@ -64,8 +82,12 @@ create table if not exists requests (
     status text not null default 'open',      -- open | available | dismissed
     available_at timestamptz,
     -- poller-written progress for partial seasons, e.g. "3/10 eps"
-    progress text not null default ''
+    progress text not null default '',
+    -- empty = a Jellyfin request; a service name = a watchlist entry for
+    -- something already streamable ("Silo S3, Apple TV: just want to watch")
+    watch_on text not null default ''
 );
+alter table requests add column if not exists watch_on text not null default '';
 alter table requests add column if not exists season int;
 alter table requests add column if not exists progress text not null default '';
 alter table requests drop constraint if exists requests_title_id_key;
@@ -169,6 +191,27 @@ def tmdb(path, **params):
         return json.load(r)
 
 
+@app.get("/tmdb/providers")
+def tmdb_providers(tmdb_id: int, kind: str = "movie"):
+    """Where a title streams (US flatrate), split into services the household
+    has and everything else. Drives the add flow's watchlist-vs-request call."""
+    try:
+        res = tmdb(f"/{'movie' if kind == 'movie' else 'tv'}/{tmdb_id}/watch/providers")
+        flat = res.get("results", {}).get("US", {}).get("flatrate", [])
+    except Exception:
+        flat = []
+    mine, others = [], []
+    for p in flat:
+        name = p.get("provider_name", "")
+        hit = next((label for frag, label in MY_SERVICES.items()
+                    if frag in name.lower()), None)
+        if hit and hit not in mine:
+            mine.append(hit)
+        elif not hit and name not in others:
+            others.append(name)
+    return JSONResponse({"mine": mine, "others": others[:4]})
+
+
 @app.get("/tmdb/search")
 def tmdb_search(query: str = ""):
     """Search proxy for the add boxes. Movies and TV, ranked as TMDB ranks."""
@@ -236,21 +279,23 @@ def index(request: Request):
 
 @app.post("/request")
 def add_request(request: Request, tmdb_id: int = Form(...), kind: str = Form("movie"),
-                season: str = Form("")):
+                season: str = Form(""), watch_on: str = Form("")):
     t = upsert_title(tmdb_id, kind)
     sn = int(season) if season.strip().isdigit() else None
     # A dismissed title can be requested again: revive the row rather than
     # letting the unique constraint eat the request silently (found by
     # Willian with Constantine, 2026-08-15).
-    q("""insert into requests (title_id, season, requested_by) values (%s, %s, %s)
+    q("""insert into requests (title_id, season, requested_by, watch_on)
+         values (%s, %s, %s, %s)
          on conflict (title_id, coalesce(season, 0)) do update
          set status = 'open', requested_by = excluded.requested_by,
-             requested_at = now(), available_at = null
-         where requests.status = 'dismissed'""", (t["id"], sn, who(request)))
-    # If Jellyfin already has it, the poller's next pass flags it within
-    # minutes; checking inline too keeps the "already there" badge honest
-    # on first render.
-    poller.check_one_request(q, q1, t, sn)
+             requested_at = now(), available_at = null,
+             watch_on = excluded.watch_on
+         where requests.status = 'dismissed'""",
+      (t["id"], sn, who(request), watch_on.strip()))
+    # Jellyfin checks only make sense for jellyfin-bound requests.
+    if not watch_on.strip():
+        poller.check_one_request(q, q1, t, sn)
     return RedirectResponse(base_of(request) + "/", status_code=303)
 
 

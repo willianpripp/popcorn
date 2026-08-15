@@ -170,3 +170,9 @@ input, select { padding: 10px 12px; }
   .bar .mshort { display: none; }
   .bar .mfull { display: block; font-family: var(--mono); font-size: 10px; color: var(--dim); }
 }
+
+.b-stream { background: rgba(111,163,232,.14); color: #86AEE8; }
+.availrow { width: 100%; font-size: 13px; color: var(--muted); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.avail-yes { color: var(--ok); }
+.avail-no { color: var(--dim); }
+.altbtn { font-size: 12px; padding: 4px 10px; border-radius: 14px; background: var(--raised); cursor: pointer; }

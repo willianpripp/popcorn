@@ -8,8 +8,10 @@
   {{ tmdb_picker(base, "reqform", "Request a movie or series…") }}
   {# Only shown once a series is picked (picker.js): "I saw S1 and S2, bring
      me S3". Empty = the whole series. #}
+  <input type="hidden" name="watch_on">
   <input name="season" class="seasonbox" placeholder="season #" inputmode="numeric" hidden>
-  <button type="submit" class="go" disabled>Request</button>
+  <div class="availrow" id="availrow" hidden></div>
+  <button type="submit" class="go" disabled>Request for Jellyfin</button>
 </form>
 
 <main class="grid">
@@ -20,7 +22,9 @@
     <div class="pt">
       <div class="t">{{ r.name }}{% if r.season %} · S{{ r.season }}{% endif %}</div>
       <div class="m">{{ r.year or '' }} · {{ r.kind }}{% if r.genres %} · {{ r.genres.split(',')[0] }}{% endif %}</div>
-      {% if r.status == 'available' %}
+      {% if r.watch_on %}
+      <span class="badge b-stream">watch on {{ r.watch_on }}</span>
+      {% elif r.status == 'available' %}
       <span class="badge b-have">on Jellyfin</span>
       {% else %}
       <span class="badge b-want">requested · {{ r.requested_by }}</span>

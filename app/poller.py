@@ -126,7 +126,7 @@ def sync_arrivals(q, q1):
     rows = q("""select r.id, r.season, r.requested_by, t.name, t.year,
                        t.tmdb_id, t.id title_id
                 from requests r join titles t on t.id = r.title_id
-                where r.status = 'open'""")
+                where r.status = 'open' and r.watch_on = ''""")
     if not rows:
         return
     idx = library_index()

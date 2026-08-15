@@ -20,6 +20,15 @@ body {
 
 .top { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
 .brand { font-weight: 800; font-size: 20px; }
+.top .homelink { margin-left: auto; }
+.homelink {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; flex: none;
+  text-decoration: none; font-size: 19px; line-height: 1;
+  border-radius: 10px; opacity: .75;
+  transition: opacity .12s ease, transform .12s ease;
+}
+.homelink:hover, .homelink:focus-visible { opacity: 1; transform: translateY(-1px); }
 .tabs { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
 .tabs a { padding: 7px 13px; border-radius: 8px; color: var(--muted); text-decoration: none; font-size: 14px; }
 .tabs a.on { background: var(--raised); color: var(--text); font-weight: 600; }

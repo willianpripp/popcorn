@@ -176,3 +176,23 @@ input, select { padding: 10px 12px; }
 .avail-yes { color: var(--ok); }
 .avail-no { color: var(--dim); }
 .altbtn { font-size: 12px; padding: 4px 10px; border-radius: 14px; background: var(--raised); cursor: pointer; }
+
+.logrow .thumb {
+  width: 34px; height: 50px; object-fit: cover; border-radius: 6px;
+  flex: 0 0 auto; border: 1px solid var(--line);
+}
+.logrow .thumb.round { width: 44px; height: 44px; border-radius: 50%; }
+.logrow .thumb.ph {
+  display: grid; place-items: center; background: var(--raised); font-size: 19px;
+}
+
+.pchip {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+  font-family: var(--mono); font-size: 10.5px; font-weight: 700;
+  background: var(--raised); flex: 0 0 auto; gap: 1px;
+}
+.pchip.pw, .pchip i.pw { color: #6FA3E8; }
+.pchip.pa, .pchip i.pa { color: #E88CC3; }
+.pchip i { font-style: normal; }
+.split .srow .pchip { margin-right: 2px; }

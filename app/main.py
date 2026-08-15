@@ -397,8 +397,10 @@ def recap(request: Request, year: int):
         return sum(vals) / len(vals) if vals else 0
     best = sorted((r for r in rows if rated(r)), key=rated, reverse=True)[:5]
     months: dict = {}
+    whos: dict = {}
     for r in rows:
         months[r["watched_on"].month] = months.get(r["watched_on"].month, 0) + 1
+        whos[r["who"]] = whos.get(r["who"], 0) + 1
     years = [r["y"] for r in q(
         "select distinct extract(year from watched_on)::int y from watches order by y desc")]
     return templates.TemplateResponse(request, "recap.html", {
@@ -408,6 +410,7 @@ def recap(request: Request, year: int):
         "acts": sorted(acts.items(), key=lambda kv: -kv[1][0]),
         "genre": sorted(genre.items(), key=lambda kv: -kv[1])[:6],
         "best": best, "rated": rated, "months": months,
+        "whos": sorted(whos.items(), key=lambda kv: -kv[1]),
         "who": who(request)})
 
 

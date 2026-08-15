@@ -210,6 +210,69 @@ def sync_jellyfin_watches(q, q1):
 # --- calendar cinema events ---------------------------------------------------------
 
 
+def _norm_title(t):
+    return "".join(c for c in t.lower() if c.isalnum() or c == " ").strip()
+
+
+def _cinema_title(q, q1, ev):
+    """A cinema event's title, TMDB-matched when possible so the diary gets
+    the real poster, genres and runtime instead of a flat 2h guess. The match
+    must actually look like the event's title (normalized equality or
+    containment), because "One Night Only" was an AMC Screen Unseen session
+    and a confident wrong poster is worse than none. Matched once per entry:
+    an existing entry already pointing at a TMDB-backed title is left alone."""
+    existing = q1("""select t.id title_id, t.tmdb_id from watches w
+                     join titles t on t.id = w.title_id
+                     where w.source_key = %s""", (f"cal:{ev['id']}",))
+    if existing and existing["tmdb_id"]:
+        return existing["title_id"]
+    import main
+    year = (ev.get("date") or "")[:4]
+    try:
+        res = main.tmdb("/search/movie", query=ev["title"],
+                        primary_release_year=year, include_adult="false")
+        hits = res.get("results", [])
+        if not hits:
+            hits = main.tmdb("/search/movie", query=ev["title"],
+                             include_adult="false").get("results", [])
+        want = _norm_title(ev["title"])
+        for h in hits[:3]:
+            got = _norm_title(h.get("title") or "")
+            if got and (got == want or want in got or got in want):
+                return main.upsert_title(h["id"], "movie")["id"]
+    except Exception:
+        pass
+    return _ensure_title(q, q1, ev["title"], None, "movie", 120)["id"]
+
+
+def _artist_image(name):
+    """A band photo for concert entries, via TheAudioDB's free tier. The
+    event title carries tour names ("Alex Warren: Finding Family on the
+    Road") and Portuguese prefixes ("Show AC/DC"), so try progressively
+    cleaned forms. Absent is fine: the row falls back to its emoji tile."""
+    cands = [name]
+    if ":" in name:
+        cands.append(name.split(":")[0])
+    if " - " in name:
+        cands.append(name.split(" - ")[0])
+    low = name.lower()
+    if low.startswith("show "):
+        cands.append(name[5:])
+    for c in cands:
+        try:
+            url = ("https://www.theaudiodb.com/api/v1/json/2/search.php?s="
+                   + urllib.parse.quote(c.strip()))
+            with urllib.request.urlopen(url, timeout=10) as r:
+                data = json.load(r)
+            artists = data.get("artists") or []
+            thumb = artists[0].get("strArtistThumb") if artists else None
+            if thumb:
+                return thumb + "/preview"
+        except Exception:
+            continue
+    return ""
+
+
 def sync_cinema(q, q1):
     """The calendar feed. Prefers the widened endpoint (cinema + attended
     events: concert/sports/travel/...); falls back to the original
@@ -232,15 +295,19 @@ def sync_cinema(q, q1):
             continue  # future plans are not memories yet
         cat = (ev.get("category") or "cinema").lower()
         if cat == "cinema":
-            t = _ensure_title(q, q1, ev["title"], None, "movie", 120)
+            tid = _cinema_title(q, q1, ev)
             q("""insert into watches (title_id, platform, watched_on, who,
                  source, source_key) values (%s, 'Cinema', %s, %s, 'calendar', %s)
                  on conflict (source_key) do update
                  set title_id = excluded.title_id,
                      watched_on = excluded.watched_on, who = excluded.who""",
-              (t["id"], ev["date"], ev.get("owner") or "Both", key))
+              (tid, ev["date"], ev.get("owner") or "Both", key))
         else:
             t = _ensure_title(q, q1, ev["title"], None, "movie", 0)
+            if cat == "concert" and not t.get("poster"):
+                img = _artist_image(ev["title"])
+                if img:
+                    q("update titles set poster = %s where id = %s", (img, t["id"]))
             # UPSERT, not insert-once: editing the event (dates stretched,
             # title fixed, owner changed) updates the diary entry in place.
             q("""insert into watches (title_id, platform, watched_on, who,

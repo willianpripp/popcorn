@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_nav.html" import nav, tmdb_picker with context %}
+{% from "_nav.html" import nav, tmdb_picker, person with context %}
 {% block content %}
 {{ nav(base, tab) }}
 
@@ -23,11 +23,11 @@
       <div class="t">{{ r.name }}{% if r.season %} · S{{ r.season }}{% endif %}</div>
       <div class="m">{{ r.year or '' }} · {{ r.kind }}{% if r.genres %} · {{ r.genres.split(',')[0] }}{% endif %}</div>
       {% if r.watch_on %}
-      <span class="badge b-stream">watch on {{ r.watch_on }}</span>
+      <span class="badge b-stream">watch on {{ r.watch_on }}</span> {{ person(r.requested_by) }}
       {% elif r.status == 'available' %}
-      <span class="badge b-have">on Jellyfin</span>
+      <span class="badge b-have">on Jellyfin</span> {{ person(r.requested_by) }}
       {% else %}
-      <span class="badge b-want">requested · {{ r.requested_by }}</span>
+      <span class="badge b-want">requested</span> {{ person(r.requested_by) }}
       {% if r.progress %}<span class="badge b-part">{{ r.progress }} on jellyfin</span>{% endif %}
       {% endif %}
       <form method="post" action="{{ base }}/request/{{ r.id }}/dismiss" class="dismiss">

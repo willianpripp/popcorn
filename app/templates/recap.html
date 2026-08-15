@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_nav.html" import nav with context %}
+{% from "_nav.html" import nav, person with context %}
 {% block content %}
 {{ nav(base, tab) }}
 
@@ -17,6 +17,17 @@
   <div class="kpi"><div class="n">{{ plat[0][0] if plat else '—' }}</div><div class="l">top platform</div></div>
   <div class="kpi"><div class="n">{{ genre[0][0] if genre else '—' }}</div><div class="l">top genre</div></div>
 </div>
+
+{% if whos %}
+<section class="split">
+  <h2>Who</h2>
+  {% for name, n in whos %}
+  <div class="srow"><span>{{ person(name) }} {{ name }}</span>
+    <div class="sbarwrap"><div class="sbar" style="width: {{ (n / whos[0][1] * 100) | round }}%"></div></div>
+    <span class="sn">{{ n }}</span></div>
+  {% endfor %}
+</section>
+{% endif %}
 
 {% if acts %}
 <section class="split">
@@ -61,6 +72,8 @@
   <h2>Best rated</h2>
   {% for b in best %}
   <div class="logrow">
+    {% if b.poster %}<img class="thumb" src="{{ b.poster }}" alt="" loading="lazy">
+    {% else %}<span class="thumb ph">🎬</span>{% endif %}
     <span class="t">{{ b.name }}{% if b.season %} · S{{ b.season }}{% endif %}</span>
     <span class="stars">{{ '★' * (rated(b) | round | int) }}</span>
     <span class="date">{{ b.watched_on.strftime('%b') }}</span>

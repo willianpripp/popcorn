@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_nav.html" import nav, tmdb_picker with context %}
+{% from "_nav.html" import nav, tmdb_picker, person with context %}
 {% block content %}
 {{ nav(base, tab) }}
 
@@ -30,7 +30,9 @@
   <h2>{{ month }}</h2>
   {% for w in rows %}
   <div class="logrow">
-    <span class="t">{% if w.activity %}{{ {'concert':'🎤','sports':'🏟️','travel':'✈️','camping':'🏕️','beach':'🏖️'}.get(w.activity, '🎟️') }} {% endif %}{{ w.name }}{% if w.season %} · S{{ w.season }} finished{% endif %}{% if w.days > 1 %} · {{ w.days }} days{% endif %}</span>
+    {% if w.poster %}<img class="thumb {% if w.activity %}round{% endif %}" src="{{ w.poster }}" alt="" loading="lazy">
+    {% else %}<span class="thumb ph {% if w.activity %}round{% endif %}">{{ {'concert':'🎤','sports':'🏟️','travel':'✈️','camping':'🏕️','beach':'🏖️'}.get(w.activity, '🎬') }}</span>{% endif %}
+    <span class="t">{{ w.name }}{% if w.season %} · S{{ w.season }} finished{% endif %}{% if w.days > 1 %} · {{ w.days }} days{% endif %}</span>
     {% if w.activity %}<span class="plat act">{{ w.activity }}</span>
     {% else %}<span class="plat">{{ w.platform }}</span>{% endif %}
     {% if w.rating_willian %}<span class="stars" title="Willian">W {{ '★' * w.rating_willian }}</span>{% endif %}
@@ -43,7 +45,7 @@
       </select>
     </form>
     {% endif %}
-    <span class="who">{{ w.who }}</span>
+    {{ person(w.who) }}
     {% if w.source != 'manual' %}<span class="auto" title="Logged automatically from {{ w.source }}">auto</span>{% endif %}
     <span class="date">{{ w.watched_on.strftime('%b %d') }}</span>
     <form method="post" action="{{ base }}/watch/{{ w.id }}/delete" class="dismiss"

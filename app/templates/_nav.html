@@ -19,3 +19,11 @@
   <div class="picked"></div>
 </div>
 {% endmacro %}
+
+{% macro person(who) %}
+{# The who-chip: blue W = Willian, pink A = Aline, both together = W+A.
+   Same colors everywhere so the eye learns them once. #}
+{% if who == 'Willian' %}<span class="pchip pw" title="Willian">W</span>
+{% elif who == 'Aline' %}<span class="pchip pa" title="Aline">A</span>
+{% else %}<span class="pchip pb" title="Both"><i class="pw">W</i><i class="pa">A</i></span>{% endif %}
+{% endmacro %}

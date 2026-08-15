@@ -22,6 +22,8 @@ import urllib.request
 JF = os.environ.get("POP_JF_URL", "http://192.0.2.213:8096").rstrip("/")
 JF_KEY = os.environ.get("POP_JF_KEY", "")
 CAL_API = os.environ.get("POP_CAL_API", "http://192.0.2.251:3002/api/cinema")
+# Widened feed (attended events); falls back to CAL_API when unset or 404.
+CAL_API_WIDE = os.environ.get("POP_CAL_API_WIDE", "http://192.0.2.251:3002/api/attended")
 TICK = 900
 
 
@@ -162,22 +164,41 @@ def sync_jellyfin_watches(q, q1):
 
 
 def sync_cinema(q, q1):
-    try:
-        with urllib.request.urlopen(CAL_API, timeout=10) as r:
-            events = json.load(r)
-    except Exception:
-        return  # endpoint not shipped yet, or calendar down: next tick retries
+    """The calendar feed. Prefers the widened endpoint (cinema + attended
+    events: concert/sports/travel/...); falls back to the original
+    cinema-only one so neither side has to deploy first."""
+    events = None
+    for url in (CAL_API_WIDE, CAL_API):
+        try:
+            with urllib.request.urlopen(url, timeout=10) as r:
+                events = json.load(r)
+            break
+        except Exception:
+            continue
+    if events is None:
+        return  # calendar down: next tick retries
+    import datetime
+    today = str(datetime.date.today())
     for ev in events:
         key = f"cal:{ev['id']}"
         if q1("select 1 from watches where source_key = %s", (key,)):
             continue
-        if ev.get("date", "9999") > str(__import__("datetime").date.today()):
-            continue  # future cinema plans are not watches yet
-        t = _ensure_title(q, q1, ev["title"], None, "movie", 120)
-        q("""insert into watches (title_id, platform, watched_on, who,
-             source, source_key) values (%s, 'Cinema', %s, %s, 'calendar', %s)
-             on conflict (source_key) do nothing""",
-          (t["id"], ev["date"], ev.get("owner") or "Both", key))
+        if ev.get("date", "9999") > today:
+            continue  # future plans are not memories yet
+        cat = (ev.get("category") or "cinema").lower()
+        if cat == "cinema":
+            t = _ensure_title(q, q1, ev["title"], None, "movie", 120)
+            q("""insert into watches (title_id, platform, watched_on, who,
+                 source, source_key) values (%s, 'Cinema', %s, %s, 'calendar', %s)
+                 on conflict (source_key) do nothing""",
+              (t["id"], ev["date"], ev.get("owner") or "Both", key))
+        else:
+            t = _ensure_title(q, q1, ev["title"], None, "movie", 0)
+            q("""insert into watches (title_id, platform, watched_on, who,
+                 source, source_key, activity) values (%s, 'Live', %s, %s,
+                 'calendar', %s, %s)
+                 on conflict (source_key) do nothing""",
+              (t["id"], ev["date"], ev.get("owner") or "Both", key, cat))
 
 
 async def loop(q, q1):

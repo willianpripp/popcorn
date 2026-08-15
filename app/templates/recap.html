@@ -18,6 +18,17 @@
   <div class="kpi"><div class="n">{{ genre[0][0] if genre else '—' }}</div><div class="l">top genre</div></div>
 </div>
 
+{% if acts %}
+<section class="split">
+  <h2>Out of the house</h2>
+  {% for name, n in acts %}
+  <div class="srow"><span>{{ name }}</span>
+    <div class="sbarwrap"><div class="sbar" style="width: {{ (n / acts[0][1] * 100) | round }}%"></div></div>
+    <span class="sn">{{ n }}</span></div>
+  {% endfor %}
+</section>
+{% endif %}
+
 {% if months %}
 <section class="chart">
   <h2>By month</h2>

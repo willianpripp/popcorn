@@ -75,8 +75,12 @@ create table if not exists watches (
     note text not null default '',
     source text not null default 'manual',     -- manual | jellyfin | calendar
     source_key text unique,                    -- dedupe for the automatic feeds
+    -- attended events from the calendar (concert/sports/travel/...): the
+    -- category name, lowercase; empty for watched screen content
+    activity text not null default '',
     created_at timestamptz not null default now()
 );
+alter table watches add column if not exists activity text not null default '';
 create index if not exists watches_month on watches (watched_on);
 """
 
@@ -305,11 +309,18 @@ def recap(request: Request, year: int):
         order by w.watched_on""", (year,))
     # Series seasons count their episodes' runtime approximately: runtime_min
     # is per episode and a season is ~10; movies carry their real runtime.
+    # Attended events (activity set) carry no screen time.
     hours = sum((r["runtime_min"] * (10 if r["kind"] == "series" else 1))
-                for r in rows) / 60
+                for r in rows if not r["activity"]) / 60
+    acts: dict = {}
+    for r in rows:
+        if r["activity"]:
+            acts[r["activity"]] = acts.get(r["activity"], 0) + 1
     plat: dict = {}
     genre: dict = {}
     for r in rows:
+        if r["activity"]:
+            continue
         plat[r["platform"]] = plat.get(r["platform"], 0) + 1
         for g in (r["genres"] or "").split(","):
             g = g.strip()
@@ -326,8 +337,9 @@ def recap(request: Request, year: int):
         "select distinct extract(year from watched_on)::int y from watches order by y desc")]
     return templates.TemplateResponse(request, "recap.html", {
         "request": request, "base": base_of(request), "tab": "recap",
-        "year": year, "years": years, "count": len(rows), "hours": round(hours),
+        "year": year, "years": years, "count": sum(1 for r in rows if not r["activity"]), "hours": round(hours),
         "plat": sorted(plat.items(), key=lambda kv: -kv[1]),
+        "acts": sorted(acts.items(), key=lambda kv: -kv[1]),
         "genre": sorted(genre.items(), key=lambda kv: -kv[1])[:6],
         "best": best, "rated": rated, "months": months,
         "who": who(request)})

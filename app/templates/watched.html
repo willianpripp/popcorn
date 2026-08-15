@@ -4,7 +4,7 @@
 {{ nav(base, tab) }}
 
 <details class="logbox">
-  <summary>+ Log something watched</summary>
+  <summary>+ Log something you watched</summary>
   <form method="post" action="{{ base }}/watch" class="logform" id="logform">
     <input type="hidden" name="tmdb_id"><input type="hidden" name="kind">
     {{ tmdb_picker(base, "logform", "What did you watch?") }}
@@ -54,9 +54,10 @@
   {% endfor %}
 </section>
 {% else %}
-<p class="empty">Nothing logged yet. Jellyfin finishes and Cinema events from
-the calendar will appear here on their own; everything else goes through
-"Log something watched".</p>
+<p class="empty">Nothing here yet. This page fills itself: Jellyfin
+finishes, and anything on the calendar in the Cinema, Concert, Sports or
+Travel categories. Streaming watched elsewhere goes through "Log something
+you watched".</p>
 {% endfor %}
 
 <script src="{{ base }}/static/picker.js"></script>

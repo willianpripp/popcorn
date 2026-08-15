@@ -1,6 +1,21 @@
 # STATUS
 
-**Where it stands (2026-08-15, end of day):** live and in real use; Willian's
+**Friction round 1 (2026-08-15, afternoon), all deployed and verified live:**
+diary filter chips in two composable dimensions (type: movies/series/cinema/
+concerts/sports/trips, plus genre from the data), first genre shown on each
+row; the rate select is now strictly per person (gone the moment YOU rated,
+still there for the other); **loved**: a "5 stars + heart" option in both
+rating selects (loved_willian/loved_aline columns), hearts on diary rows;
+recap gained a person filter (Everyone/Willian/Aline/Together, every stat
+recomputes), a poster shelf, a Loved row, colored who-bars and fun-facts
+cards (busiest month, cinema visits, days out, average stars W/A, top genre
+each); person colors changed app-wide: W blue, **A purple**, Both yellow;
+🏠 home link to the Casa portal in the header; rating/deleting from a
+filtered diary returns to the same filter; the poller skips attended events
+titled "flight" (trip logistics are not trips). Playwright-verified at 390px
+and 1280px, loved flow tested end to end with a throwaway entry.
+
+**Where it stood (2026-08-15, end of the build day):** live and in real use; Willian's
 AMC history backfilled, ratings flowing, first requests queued. Same-day
 evolution from real feedback: the Watched tab became **Diary** (it holds
 concerts and trips now); attended events (concert/sports/travel + future
@@ -14,9 +29,9 @@ checked against the household's services (Netflix, Peacock, Disney+/Hulu,
 Apple TV+, HBO Max, Prime, Crunchyroll), streamable titles become watchlist
 entries, everything else goes to Jellyfin; dismissed titles revivable;
 calendar edits propagate (upsert on source_key). Flights: the Visitors
-category on the calendar keeps airport logistics out of the diary; the
-Philadelphia flight (Sep 18) is still Travel and will double-count unless
-recategorized before it passes.
+category keeps airport logistics out of the diary, and since the friction
+round the poller also skips any attended event titled "flight", so the
+Philadelphia flight (Sep 18) can stay Travel and still will not double-count.
 
 **v1 as originally built:** the same day as Groceries.
 All three tabs work end to end (verified: TMDB search with posters, request

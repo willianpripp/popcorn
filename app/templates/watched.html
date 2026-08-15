@@ -1,5 +1,12 @@
 {% extends "base.html" %}
 {% from "_nav.html" import nav, tmdb_picker, person with context %}
+
+{# Chip links are plain GET: each one keeps the other dimension's value, so
+   type and genre compose instead of resetting each other. #}
+{%- macro dlink(t, g) -%}
+{{ base }}/watched{% if t or g %}?{% endif %}{% if t %}type={{ t }}{% endif %}{% if t and g %}&amp;{% endif %}{% if g %}genre={{ g | urlencode }}{% endif %}
+{%- endmacro -%}
+
 {% block content %}
 {{ nav(base, tab) }}
 
@@ -17,6 +24,7 @@
       <input name="season" placeholder="season # (series)" inputmode="numeric" class="seas">
       <select name="rating">
         <option value="">no rating</option>
+        <option value="5love">★★★★★ ❤</option>
         {% for i in [5,4,3,2,1] %}<option value="{{ i }}">{{ '★' * i }}</option>{% endfor %}
       </select>
       <input name="note" placeholder="note">
@@ -24,6 +32,22 @@
     <button type="submit" class="go" disabled>Log it</button>
   </form>
 </details>
+
+{# Filters sit right on top of the list they filter, not on top of the log
+   form, so it is never ambiguous what they act on. #}
+<div class="chips">
+  {% for val, label in type_chips %}
+  <a class="chip {% if sel_type == val %}on{% endif %}" href="{{ dlink(val, sel_genre) }}">{{ label }}</a>
+  {% endfor %}
+</div>
+{% if genres | length > 1 %}
+<div class="chips chips-2">
+  <a class="chip {% if not sel_genre %}on{% endif %}" href="{{ dlink(sel_type, '') }}">All genres</a>
+  {% for g in genres %}
+  <a class="chip {% if sel_genre == g %}on{% endif %}" href="{{ dlink(sel_type, g) }}">{{ g }}</a>
+  {% endfor %}
+</div>
+{% endif %}
 
 {% for month, rows in months.items() %}
 <section class="month">
@@ -34,13 +58,20 @@
     {% else %}<span class="thumb ph {% if w.activity %}round{% endif %}">{{ {'concert':'🎤','sports':'🏟️','travel':'✈️','camping':'🏕️','beach':'🏖️'}.get(w.activity, '🎬') }}</span>{% endif %}
     <span class="t">{{ w.name }}{% if w.season %} · S{{ w.season }} finished{% endif %}{% if w.days > 1 %} · {{ w.days }} days{% endif %}</span>
     {% if w.activity %}<span class="plat act">{{ w.activity }}</span>
-    {% else %}<span class="plat">{{ w.platform }}</span>{% endif %}
-    {% if w.rating_willian %}<span class="stars" title="Willian">W {{ '★' * w.rating_willian }}</span>{% endif %}
-    {% if w.rating_aline %}<span class="stars" title="Aline">A {{ '★' * w.rating_aline }}</span>{% endif %}
-    {% if not w.rating_willian or not w.rating_aline %}
+    {% else %}<span class="plat">{{ w.platform }}</span>
+      {% if w.genres %}<span class="gen">{{ w.genres.split(',')[0].strip() }}</span>{% endif %}
+    {% endif %}
+    {% if w.rating_willian %}<span class="stars" title="Willian">W {{ '★' * w.rating_willian }}{% if w.loved_willian %} ❤{% endif %}</span>{% endif %}
+    {% if w.rating_aline %}<span class="stars" title="Aline">A {{ '★' * w.rating_aline }}{% if w.loved_aline %} ❤{% endif %}</span>{% endif %}
+    {# The select is mine to use until I have used it: my own rating being
+       null is the whole condition. An unmapped device (who = Both) cannot
+       rate for anyone, so it never sees one. #}
+    {% if (who == 'Willian' and not w.rating_willian) or (who == 'Aline' and not w.rating_aline) %}
     <form method="post" action="{{ base }}/watch/{{ w.id }}/rate" class="rateform">
+      <input type="hidden" name="back" value="{{ qs }}">
       <select name="rating" onchange="this.form.submit()" title="Rate it (as you)">
         <option value="">rate</option>
+        <option value="5love">★★★★★ ❤</option>
         {% for i in [5,4,3,2,1] %}<option value="{{ i }}">{{ '★' * i }}</option>{% endfor %}
       </select>
     </form>
@@ -50,16 +81,22 @@
     <span class="date">{{ w.watched_on.strftime('%b %d') }}</span>
     <form method="post" action="{{ base }}/watch/{{ w.id }}/delete" class="dismiss"
           onsubmit="return confirm('Remove this entry?')">
+      <input type="hidden" name="back" value="{{ qs }}">
       <button title="Delete (the undo for automatic entries)">×</button>
     </form>
   </div>
   {% endfor %}
 </section>
 {% else %}
+{% if sel_type or sel_genre %}
+<p class="empty">Nothing in the diary matches this filter.
+<a href="{{ base }}/watched">Show everything</a>.</p>
+{% else %}
 <p class="empty">Nothing here yet. This page fills itself: Jellyfin
 finishes, and anything on the calendar in the Cinema, Concert, Sports or
 Travel categories. Streaming watched elsewhere goes through "Log something
 you watched".</p>
+{% endif %}
 {% endfor %}
 
 <script src="{{ base }}/static/picker.js"></script>

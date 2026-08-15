@@ -3,13 +3,31 @@
 {% block content %}
 {{ nav(base, tab) }}
 
+{# Both pickers are plain links and each keeps the other's choice, so the
+   year and the person compose. #}
+{%- macro rlink(y, w) -%}
+{{ base }}/recap/{{ y }}{% if w %}?who={{ w }}{% endif %}
+{%- endmacro -%}
+
 <div class="yearpick">
   {% for y in years %}
-  <a href="{{ base }}/recap/{{ y }}" {% if y == year %}class="on"{% endif %}>{{ y }}</a>
+  <a href="{{ rlink(y, sel_who) }}" {% if y == year %}class="on"{% endif %}>{{ y }}</a>
+  {% endfor %}
+</div>
+
+<div class="chips">
+  {% for val, label, cls in who_chips %}
+  <a class="chip {{ cls }} {% if sel_who == val %}on{% endif %}" href="{{ rlink(year, val) }}">{{ label }}</a>
   {% endfor %}
 </div>
 
 <h1 class="wrapt">{{ year }}, watched and attended.</h1>
+
+{% if shelf %}
+<div class="shelf">
+  {% for p in shelf %}<img src="{{ p }}" alt="" loading="lazy">{% endfor %}
+</div>
+{% endif %}
 
 <div class="kpis">
   <div class="kpi"><div class="n">{{ count }}</div><div class="l">titles</div></div>
@@ -23,7 +41,7 @@
   <h2>Who</h2>
   {% for name, n in whos %}
   <div class="srow"><span>{{ person(name) }} {{ name }}</span>
-    <div class="sbarwrap"><div class="sbar" style="width: {{ (n / whos[0][1] * 100) | round }}%"></div></div>
+    <div class="sbarwrap"><div class="sbar {{ {'Willian': 'bw', 'Aline': 'ba'}.get(name, 'bb') }}" style="width: {{ (n / whos[0][1] * 100) | round }}%"></div></div>
     <span class="sn">{{ n }}</span></div>
   {% endfor %}
 </section>
@@ -75,10 +93,51 @@
     {% if b.poster %}<img class="thumb" src="{{ b.poster }}" alt="" loading="lazy">
     {% else %}<span class="thumb ph">🎬</span>{% endif %}
     <span class="t">{{ b.name }}{% if b.season %} · S{{ b.season }}{% endif %}</span>
-    <span class="stars">{{ '★' * (rated(b) | round | int) }}</span>
+    <span class="stars">{{ '★' * (rated(b) | round | int) }}{% if b.loved_willian or b.loved_aline %} ❤{% endif %}</span>
     <span class="date">{{ b.watched_on.strftime('%b') }}</span>
   </div>
   {% endfor %}
+</section>
+{% endif %}
+
+{% if loved %}
+<section class="bestof">
+  <h2>Loved</h2>
+  {% for b in loved %}
+  <div class="logrow">
+    {% if b.poster %}<img class="thumb {% if b.activity %}round{% endif %}" src="{{ b.poster }}" alt="" loading="lazy">
+    {% else %}<span class="thumb ph">🎬</span>{% endif %}
+    <span class="t">{{ b.name }}{% if b.season %} · S{{ b.season }}{% endif %}</span>
+    <span class="stars">❤{% if b.loved_willian %} <i class="cw">W</i>{% endif %}{% if b.loved_aline %} <i class="ca">A</i>{% endif %}</span>
+    <span class="date">{{ b.watched_on.strftime('%b') }}</span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if count or facts.days_out %}
+<section class="split">
+  <h2>Fun facts</h2>
+  <div class="kpis">
+    {% if facts.busiest %}
+    <div class="kpi"><div class="n sm">{{ facts.busiest }}</div><div class="l">busiest month</div></div>
+    {% endif %}
+    <div class="kpi"><div class="n">{{ facts.cinema }}</div><div class="l">cinema visits</div></div>
+    <div class="kpi"><div class="n">{{ facts.days_out }}</div><div class="l">days out of the house</div></div>
+    <div class="kpi">
+      <div class="n sm"><span class="cw">W {{ facts.avg_w if facts.avg_w else '-' }}</span>
+        / <span class="ca">A {{ facts.avg_a if facts.avg_a else '-' }}</span></div>
+      <div class="l">average stars</div>
+    </div>
+    {% if facts.has_topgen %}
+    <div class="kpi">
+      <div class="n sm">
+        {%- for lab, cls, g in facts.topgen %}{% if not loop.first %} / {% endif %}<span class="{{ cls }}">{% if lab %}{{ lab }} {% endif %}{{ g or '-' }}</span>{% endfor -%}
+      </div>
+      <div class="l">top genre{% if not sel_who %} each{% endif %}</div>
+    </div>
+    {% endif %}
+  </div>
 </section>
 {% endif %}
 

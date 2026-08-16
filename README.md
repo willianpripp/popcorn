@@ -140,16 +140,20 @@ framework, no cloud service. TMDB proxy for posters and metadata; optional Jelly
 hardware in the house, which is why the watchlist keeps working when the internet
 does not.
 
-## Layout
+## Project structure
 
 ```
-app/main.py         routes, schema, TMDB proxy, the watchlist-vs-request rule
-app/poller.py        the automatic feeds: Jellyfin finishes, request arrivals,
-                     calendar events; each source is independently optional
-app/gate.py          who is trusted, who needs a password
-app/templates/       Jinja, phone-first CSS with a desktop breakpoint
-demo/seed.sql        the invented request queue and diary used by `make demo`
-docker-compose.yml   app + postgres, loopback-bound on purpose
+popcorn/
+├── app/
+│   ├── main.py           # routes, schema, TMDB proxy, the watchlist-vs-request rule
+│   ├── poller.py         # the automatic feeds: Jellyfin finishes, request arrivals,
+│   │                     # calendar events; each source is independently optional
+│   ├── gate.py           # who is trusted, who needs a password
+│   └── templates/        # Jinja, phone-first CSS with a desktop breakpoint
+├── demo/seed.sql         # the invented request queue and diary used by `make demo`
+├── docker-compose.yml    # app + postgres, loopback-bound on purpose
+├── Makefile              # make demo
+└── README.md
 ```
 
 The committed compose file binds to loopback only: a reverse proxy or a VPN

@@ -1,5 +1,7 @@
 # Popcorn
 
+[![hygiene](https://github.com/willianpripp/popcorn/actions/workflows/hygiene.yml/badge.svg)](https://github.com/willianpripp/popcorn/actions/workflows/hygiene.yml)
+
 A household's movie and series watchlist and watch diary, built around one
 observation: wanting to watch something and having watched something are two
 different lists, and most trackers conflate them. So Popcorn keeps three

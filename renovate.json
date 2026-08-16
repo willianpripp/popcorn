@@ -1,38 +1,61 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
+  "extends": [
+    "config:recommended"
+  ],
   "timezone": "America/New_York",
   "description": [
-    "Every image in this estate is pinned to an exact tag, which is correct and",
-    "creates exactly one gap: a pin never changes, so nothing reports the day it",
-    "becomes vulnerable. The weekly Trivy scan found 432 fixable HIGH/CRITICAL",
-    "findings on 2026-08-16 and 251 of them were three tag bumps. Renovate is the",
-    "half of that fix which costs nothing on the host: it runs on GitHub, not on",
-    "the box, and it opens PRs rather than changing anything.",
-    "See homelab-private OBJECTIVES.md item 13 and roles/container_scan."
+    "SPLIT WITH DEPENDABOT, which this repo already had before Renovate arrived",
+    "(.github/dependabot.yml, added 2026-08-16). Running both unconstrained means",
+    "two PRs for the same bump.",
+    "Dependabot keeps what it is already doing and is good at: pip in /app, the",
+    "/app Dockerfile, and github-actions.",
+    "Renovate takes docker-compose ONLY, because Dependabot cannot read",
+    "docker-compose.yml at all, and that is where this estate's pinned images live",
+    "(postgres here; caddy, grafana, adguard, homepage, nginx, glances elsewhere).",
+    "That gap is the whole reason Renovate was added: 251 of the 453 fixable",
+    "HIGH/CRITICAL findings on 2026-08-16 were three compose-pinned tags.",
+    "If Dependabot is ever removed here, widen enabledManagers rather than",
+    "assuming coverage."
   ],
-  "schedule": ["before 6am on monday"],
+  "schedule": [
+    "before 6am on monday"
+  ],
   "prConcurrentLimit": 3,
-  "labels": ["dependencies"],
+  "labels": [
+    "dependencies"
+  ],
   "packageRules": [
     {
       "description": "Minor and patch grouped into one PR. These are the bumps that clear CVEs, and reviewing them one image at a time is how a backlog like this stops getting reviewed at all.",
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "groupName": "minor and patch updates"
     },
     {
       "description": "Majors stay separate and each needs a tick on the dependency dashboard before a PR is even opened. A major Postgres or Caddy bump is a migration and a config review, not a dependency update.",
-      "matchUpdateTypes": ["major"],
+      "matchUpdateTypes": [
+        "major"
+      ],
       "dependencyDashboardApproval": true
     },
     {
       "description": "Postgres holds production data for every household app. Never grouped with anything else, so its diff is always read on its own.",
-      "matchDatasources": ["docker"],
-      "matchPackageNames": ["postgres"],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "postgres"
+      ],
       "groupName": "postgres"
     }
   ],
   "dependencyDashboard": true,
   "automerge": false,
-  "internalChecksFilter": "strict"
+  "internalChecksFilter": "strict",
+  "enabledManagers": [
+    "docker-compose"
+  ]
 }

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_nav.html" import nav, person with context %}
 {% block content %}
-{{ nav(base, tab) }}
+{{ nav(base, tab, portal_url) }}
 
 {# Both pickers are plain links and each keeps the other's choice, so the
    year and the person compose. #}

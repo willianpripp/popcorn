@@ -1,4 +1,4 @@
-{% macro nav(base, tab) %}
+{% macro nav(base, tab, portal_url='') %}
 <header class="top">
   <span class="brand">🍿 Popcorn</span>
   <nav class="tabs">
@@ -6,10 +6,10 @@
     <a href="{{ base }}/watched" {% if tab == 'watched' %}class="on"{% endif %}>Diary</a>
     <a href="{{ base }}/recap" {% if tab == 'recap' %}class="on"{% endif %}>Recap</a>
   </nav>
-  {# Two ways in, two portals: behind the funnel prefix the portal is this
-     host's root; reached straight on the tailnet port it is the :10000 page. #}
-  <a class="homelink" title="Casa portal"
-     href="{% if base %}/{% else %}https://home.example.ts.net:10000{% endif %}">🏠</a>
+  {% if base or portal_url %}
+  <a class="homelink" title="Home portal"
+     href="{% if base %}/{% else %}{{ portal_url }}{% endif %}">🏠</a>
+  {% endif %}
 </header>
 {% endmacro %}
 

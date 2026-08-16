@@ -1,6 +1,4 @@
-# Groceries. Same shape as the calendar's stack: app + postgres, loopback for
-# tailscale serve and the path router, LAN for devices without tailscale
-# (guests, the work MacBook at home).
+# Popcorn. Same shape as groceries/the family calendar: app + postgres.
 services:
   db:
     image: postgres:17.10
@@ -30,16 +28,20 @@ services:
       GATE_SECRET: ${GATE_SECRET:-}
       GATE_USERS: ${GATE_USERS:-}
       POP_DEVICES: ${POP_DEVICES:-}
+      POP_PORTAL_URL: ${POP_PORTAL_URL:-}
       POP_TMDB_KEY: ${POP_TMDB_KEY:-}
+      POP_JF_URL: ${POP_JF_URL:-}
       POP_JF_KEY: ${POP_JF_KEY:-}
+      POP_CAL_API: ${POP_CAL_API:-}
+      POP_CAL_API_WIDE: ${POP_CAL_API_WIDE:-}
       POP_TELEGRAM_TOKEN: ${POP_TELEGRAM_TOKEN:-}
       POP_TELEGRAM_CHATS: ${POP_TELEGRAM_CHATS:-}
-      TZ: America/New_York
+      TZ: ${TZ:-America/New_York}
     ports:
-      # Loopback for tailscale serve (:8449) and the path router (/popcorn);
-      # the LAN address for the home wifi tier, same as the calendar.
+      # Loopback only, on purpose: a reverse proxy or a VPN front end is meant
+      # to be the way in. Extra bindings (a LAN address, another port) belong
+      # in a docker-compose.override.yml, which is host-specific and ignored.
       - "127.0.0.1:3040:8000"
-      - "192.0.2.251:3040:8000"
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)\" || exit 1"]
       interval: 30s

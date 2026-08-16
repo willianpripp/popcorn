@@ -9,12 +9,12 @@
 # updating every app's .env; that is the accepted cost of one-login
 # (Willian, 2026-08-15).
 #
-# The trust rule, exactly as he scoped it: auth only where the trust boundary
-# is. Tailnet devices (:8446) and home-LAN visitors are never asked; only a
-# request whose real client address is public needs a session. people.py keeps
-# deciding whose *pictures* these are; this module only decides whether the
-# request gets in at all. The two must not be merged: one is cosmetic, the
-# other is the boundary.
+# The trust rule: authenticate only where the trust boundary actually is.
+# Visitors arriving over the VPN or from the home LAN are never asked; only a
+# request whose real client address is public needs a session. Deciding *who*
+# somebody is, for labelling rows and choosing their pictures, is a separate
+# concern from deciding whether the request gets in at all. The two must not
+# be merged: one is cosmetic, the other is the boundary.
 #
 # Who the real client is takes care, because X-Forwarded-For is a list that
 # anyone can seed. The chain here is at most: forged entries from the visitor,

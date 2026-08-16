@@ -1,3 +1,7 @@
 .env
 __pycache__/
 *.pyc
+
+# Host-specific compose bits (extra port bindings, local paths). The committed
+# compose file stays generic; anything about one machine lives here.
+docker-compose.override.yml

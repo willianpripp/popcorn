@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_nav.html" import nav, tmdb_picker, person with context %}
 {% block content %}
-{{ nav(base, tab) }}
+{{ nav(base, tab, portal_url) }}
 
 <form method="post" action="{{ base }}/request" class="addcard" id="reqform">
   <input type="hidden" name="tmdb_id"><input type="hidden" name="kind">

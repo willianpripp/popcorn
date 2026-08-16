@@ -37,6 +37,11 @@ DSN = os.environ.get("POP_DSN", "postgresql://popcorn:popcorn@db:5432/popcorn")
 TMDB_KEY = os.environ.get("POP_TMDB_KEY", "")
 IMG = "https://image.tmdb.org/t/p/w342"
 
+# Where the 🏠 link goes when this app is reached directly rather than through
+# a path router. Empty means "no portal", and the link is simply not rendered:
+# a standalone install has nothing to go back to.
+POP_PORTAL_URL = os.environ.get("POP_PORTAL_URL", "").strip()
+
 PLATFORMS = ["Jellyfin", "Cinema", "Netflix", "AppleTV", "Prime", "Disney+",
              "Hulu", "Peacock", "HBO Max", "Crunchyroll", "Other"]
 
@@ -309,7 +314,7 @@ def index(request: Request):
         order by r.status = 'available' desc, r.requested_at desc""")
     return templates.TemplateResponse(request, "index.html", {
         "request": request, "base": base_of(request), "rows": rows,
-        "tab": "want", "who": who(request)})
+        "tab": "want", "who": who(request), "portal_url": POP_PORTAL_URL})
 
 
 @app.post("/request")
@@ -404,7 +409,7 @@ def watched(request: Request, kind_f: str = Query("", alias="type"),
         "today": date.today().isoformat(), "who": who(request),
         "type_chips": TYPE_CHIPS, "genres": genres, "who_chips": WHO_CHIPS,
         "sel_type": kind_f, "sel_genre": genre_f, "sel_who": who_f,
-        "qs": request.url.query})
+        "qs": request.url.query, "portal_url": POP_PORTAL_URL})
 
 
 @app.post("/watch")
@@ -565,7 +570,7 @@ def recap(request: Request, year: int, whof: str = Query("", alias="who")):
         "shelf": shelf, "facts": facts,
         "whos": sorted(whos.items(), key=lambda kv: -kv[1]),
         "who_chips": WHO_CHIPS, "sel_who": whof,
-        "who": who(request)})
+        "who": who(request), "portal_url": POP_PORTAL_URL})
 
 
 # --- the front door (public visitors only; see gate.py) ---------------------------
@@ -581,7 +586,8 @@ def login_form(request: Request, next: str = "/"):
         return RedirectResponse(base_of(request) + _safe_next(next), status_code=303)
     return templates.TemplateResponse(request, "login.html", {
         "request": request, "base": base_of(request),
-        "next": _safe_next(next), "error": None, "configured": gate.configured()})
+        "next": _safe_next(next), "error": None, "configured": gate.configured(),
+        "portal_url": POP_PORTAL_URL})
 
 
 @app.post("/login", response_class=HTMLResponse)
@@ -593,7 +599,8 @@ def login_submit(request: Request, who_: str = Form("", alias="who"),
         return templates.TemplateResponse(request, "login.html", {
             "request": request, "base": base_of(request),
             "next": _safe_next(next), "configured": gate.configured(),
-            "error": "Wrong name or password." if gate.configured() else None})
+            "error": "Wrong name or password." if gate.configured() else None,
+            "portal_url": POP_PORTAL_URL})
     resp = RedirectResponse(base_of(request) + _safe_next(next), status_code=303)
     resp.set_cookie(gate.COOKIE, gate.mint(name), max_age=gate.SESSION_DAYS * 86400,
                     httponly=True, samesite="lax", secure=True, path="/")

@@ -19,11 +19,15 @@ import os
 import urllib.parse
 import urllib.request
 
-JF = os.environ.get("POP_JF_URL", "http://192.0.2.213:8096").rstrip("/")
+# No defaults on purpose: a stranger cloning this has neither a Jellyfin nor
+# a calendar to point at, and the app must still come up and be usable
+# manually. loop() below checks what is actually configured and skips the
+# jobs that aren't, once, with a clear line at startup rather than a crash.
+JF = os.environ.get("POP_JF_URL", "").rstrip("/")
 JF_KEY = os.environ.get("POP_JF_KEY", "")
-CAL_API = os.environ.get("POP_CAL_API", "http://192.0.2.251:3002/api/cinema")
+CAL_API = os.environ.get("POP_CAL_API", "")
 # Widened feed (attended events); falls back to CAL_API when unset or 404.
-CAL_API_WIDE = os.environ.get("POP_CAL_API_WIDE", "http://192.0.2.251:3002/api/attended")
+CAL_API_WIDE = os.environ.get("POP_CAL_API_WIDE", "")
 TICK = 900
 
 
@@ -328,12 +332,28 @@ def sync_cinema(q, q1):
 
 
 async def loop(q, q1):
-    if not JF_KEY:
-        print("popcorn poller: POP_JF_KEY unset; automatic feeds disabled")
+    # Each integration is independently optional: a stranger with no
+    # Jellyfin still gets the calendar feed if they have one (and vice
+    # versa), and with neither the loop just says so once and returns
+    # rather than crashing or spinning uselessly.
+    have_jf = bool(JF and JF_KEY)
+    have_cal = bool(CAL_API or CAL_API_WIDE)
+    if not have_jf:
+        print("popcorn poller: POP_JF_URL/POP_JF_KEY unset; Jellyfin sync"
+              " (finishes + request arrivals) disabled")
+    if not have_cal:
+        print("popcorn poller: POP_CAL_API/POP_CAL_API_WIDE unset; calendar"
+              " Cinema/attended sync disabled")
+    if not (have_jf or have_cal):
         return
+    jobs = []
+    if have_jf:
+        jobs += [sync_jellyfin_watches, sync_arrivals]
+    if have_cal:
+        jobs.append(sync_cinema)
     await asyncio.sleep(10)
     while True:
-        for job in (sync_jellyfin_watches, sync_arrivals, sync_cinema):
+        for job in jobs:
             try:
                 await asyncio.to_thread(job, q, q1)
             except Exception as e:

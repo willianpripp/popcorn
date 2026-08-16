@@ -1,0 +1,38 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "America/New_York",
+  "description": [
+    "Every image in this estate is pinned to an exact tag, which is correct and",
+    "creates exactly one gap: a pin never changes, so nothing reports the day it",
+    "becomes vulnerable. The weekly Trivy scan found 432 fixable HIGH/CRITICAL",
+    "findings on 2026-08-16 and 251 of them were three tag bumps. Renovate is the",
+    "half of that fix which costs nothing on the host: it runs on GitHub, not on",
+    "the box, and it opens PRs rather than changing anything.",
+    "See homelab-private OBJECTIVES.md item 13 and roles/container_scan."
+  ],
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 3,
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "description": "Minor and patch grouped into one PR. These are the bumps that clear CVEs, and reviewing them one image at a time is how a backlog like this stops getting reviewed at all.",
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "minor and patch updates"
+    },
+    {
+      "description": "Majors stay separate and each needs a tick on the dependency dashboard before a PR is even opened. A major Postgres or Caddy bump is a migration and a config review, not a dependency update.",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Postgres holds production data for every household app. Never grouped with anything else, so its diff is always read on its own.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["postgres"],
+      "groupName": "postgres"
+    }
+  ],
+  "dependencyDashboard": true,
+  "automerge": false,
+  "internalChecksFilter": "strict"
+}

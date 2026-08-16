@@ -48,6 +48,30 @@ diary pages still work; only the automatic feeds and the add-by-search box
 have nothing to talk to (see `.env.example` for exactly what each missing
 variable disables).
 
+## Running for real
+
+This is not a portfolio demo that was built and abandoned. It runs continuously
+on a small home server, in Docker, and two people use it every day. The access
+model is the part most worth copying:
+
+- **Nothing is port-forwarded.** The home router has no inbound ports open, so
+  there is no public attack surface pointing at the house.
+- **The household reaches it from anywhere in the world** over a Tailscale
+  tailnet: a phone on mobile data in another country gets the same app as a
+  laptop on the sofa. `tailscale serve` terminates TLS with a real certificate,
+  so it is proper HTTPS without exposing anything to the internet.
+- **Exactly one path is public**, a Tailscale Funnel address, and it exists for
+  one device that cannot join the tailnet (a work laptop with a managed
+  profile). That path is the only one that ever sees the login in
+  `app/gate.py`. The poller reaches Jellyfin and the family calendar over that
+  same private network, never over the internet. Everything arriving from the
+  private network is trusted and is never asked to authenticate, which is the
+  whole design: put the authentication where the trust boundary actually is,
+  not everywhere.
+- **Backups run nightly and an uptime probe hits `/health` every couple of
+  minutes.** Both live in a separate private infrastructure repo, because this
+  repo is the app and nothing else.
+
 ## What is interesting in here
 
 **Watchlist vs. request, decided by what you already pay for.** Picking a

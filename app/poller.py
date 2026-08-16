@@ -295,8 +295,8 @@ def sync_cinema(q, q1):
     today = str(datetime.date.today())
     for ev in events:
         # A flight is the logistics companion of a trip, never a trip of its
-        # own (Willian, 2026-08-15: the Philadelphia trip carries a separate
-        # flight event, and it was showing up as a second travel entry).
+        # own: a trip in the calendar carries a separate flight event, and it
+        # was showing up as a second travel entry alongside the trip itself.
         if "flight" in (ev.get("title") or "").lower():
             continue
         key = f"cal:{ev['id']}"

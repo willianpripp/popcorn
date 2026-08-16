@@ -145,7 +145,7 @@ create table if not exists watches (
     -- attended events from the calendar (concert/sports/travel/...): the
     -- category name, lowercase; empty for watched screen content
     activity text not null default '',
-    -- length in days for attended events (a week in Pensacola counts as 7)
+    -- length in days for attended events (a week away counts as 7)
     days int not null default 1,
     created_at timestamptz not null default now()
 );

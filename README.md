@@ -124,6 +124,22 @@ login, one cookie everywhere), and every URL a template emits is built from
 `X-Forwarded-Prefix`, which is what lets the same deployment answer both on
 its own port and as a path behind a router.
 
+## Stack
+
+| Layer | Choice | Why |
+|---|---|---|
+| Backend | FastAPI (Python 3.11+) | Typed request and response models, and free OpenAPI docs at `/docs` |
+| Database | Postgres, via `psycopg` with a connection pool | **No ORM.** The schema is small enough that SQL is shorter and clearer than a mapping layer, and it never hides what a query costs |
+| Templating | Jinja | Server-rendered HTML. The page arrives complete |
+| Frontend | None | **No build step and no JavaScript framework.** One stylesheet, a little vanilla JS. Nothing to compile, nothing to keep up to date |
+| Auth | Hand-rolled, `app/gate.py` | Classifies the request before the user: on the home network is proof enough, so only visitors from the open internet see a password |
+| Deploy | Docker Compose on a home server | Loopback-bound on purpose; a router handles TLS and the path prefix |
+
+The interesting constraint is what is absent. No ORM, no bundler, no client
+framework, no cloud service. TMDB proxy for posters and metadata; optional Jellyfin and calendar feeds. Everything runs on
+hardware in the house, which is why the watchlist keeps working when the internet
+does not.
+
 ## Layout
 
 ```

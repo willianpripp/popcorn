@@ -18,6 +18,7 @@
 import asyncio
 import json
 import os
+import re
 import time as systime
 import urllib.parse
 import urllib.request
@@ -42,22 +43,49 @@ IMG = "https://image.tmdb.org/t/p/w342"
 # a standalone install has nothing to go back to.
 POP_PORTAL_URL = os.environ.get("POP_PORTAL_URL", "").strip()
 
-PLATFORMS = ["Jellyfin", "Cinema", "Netflix", "AppleTV", "Prime", "Disney+",
-             "Hulu", "Peacock", "HBO Max", "Crunchyroll", "Other"]
+# Where a title was watched, for the logging dropdown. This is deliberately
+# wider than MY_SERVICES below: it lists services we do not pay for, because
+# something can be watched on a friend's account, a hotel television or a free
+# tier, and the diary should be able to say so.
+#
+# "Live" is here because four rows already carry it. It was reachable once, and
+# without it, editing one of those rows silently rewrites its platform to
+# whatever the dropdown defaults to.
+#
+# Names must match the labels MY_SERVICES emits, or the add flow can propose a
+# platform this dropdown does not contain.
+PLATFORMS = [
+    "Jellyfin", "Cinema", "Live",
+    # the household's own subscriptions
+    "Netflix", "Prime Video", "Disney+", "HBO Max", "Hulu", "Apple TV",
+    "Peacock", "Crunchyroll",
+    # everything else in common use
+    "Paramount+", "Starz", "Showtime", "AMC+", "Discovery+", "ESPN+",
+    "MUBI", "Shudder", "BritBox", "Criterion Channel",
+    "Tubi", "Pluto TV", "YouTube", "Plex",
+    "Other",
+]
 
 # The household's actual subscriptions (Willian, 2026-08-15). The rule they
 # encode: if a picked title streams on one of these, it goes on the watchlist
 # with that service's name; if nowhere the family already pays for, it becomes
 # a Jellyfin request. Matched by substring against TMDB's US flatrate
 # provider names, lowercase.
+# Matched as whole words against TMDB's US flatrate provider names, lowercased.
+#
+# Whole words, not bare substrings, because the two are not the same question.
+# This previously keyed on "max " with a trailing space to stop it matching
+# inside "Cinemax", and that space meant it no longer matched the service at
+# all: HBO Max is called plain "Max" now, and "max " is not in "max". Every
+# title on Max was therefore read as something we cannot stream and turned into
+# a Jellyfin request. A word boundary excludes Cinemax without excluding Max.
 MY_SERVICES = {
     "netflix": "Netflix",
     "peacock": "Peacock",
     "disney": "Disney+",
     "hulu": "Hulu",
     "apple tv": "Apple TV",
-    "hbo max": "HBO Max",
-    "max ": "HBO Max",
+    "max": "HBO Max",
     "amazon prime": "Prime Video",
     "crunchyroll": "Crunchyroll",
 }
@@ -155,6 +183,10 @@ alter table watches add column if not exists days int not null default 1;
 -- rating plus a heart, per person, so the recap can single those out.
 alter table watches add column if not exists loved_willian boolean not null default false;
 alter table watches add column if not exists loved_aline boolean not null default false;
+-- The dropdown called it "Prime" while the add flow proposed "Prime Video", so
+-- the same service could be stored under two names and split in the stats.
+-- Idempotent: after the first run nothing matches.
+update watches set platform = 'Prime Video' where platform = 'Prime';
 create index if not exists watches_month on watches (watched_on);
 """
 
@@ -244,7 +276,7 @@ def tmdb_providers(tmdb_id: int, kind: str = "movie"):
     for p in flat:
         name = p.get("provider_name", "")
         hit = next((label for frag, label in MY_SERVICES.items()
-                    if frag in name.lower()), None)
+                    if re.search(r"\b%s\b" % re.escape(frag), name.lower())), None)
         if hit and hit not in mine:
             mine.append(hit)
         elif not hit and name not in others:

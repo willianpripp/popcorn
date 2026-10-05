@@ -3,6 +3,17 @@
 A running record of what was built, what was decided, and what was
 deliberately left out. Newest first.
 
+**Flight-only trips and the recap's Trips/Shows (2026-10-03/04, #11, #12).**
+A trip entered only as its flights was dropped, because every event with
+"flight" in the title was skipped. Now a multi-day flight with no trip event
+over it is the trip ("Philadelphia Mini Vacation - Flight" → "Philadelphia
+Mini Vacation"), and a "X Flight (Departure)"/"(Return)" pair becomes one trip
+spanning both, with same-day trip-category bookings by the other person folded
+in (San Francisco, Oct 30 – Nov 2, enters after the date). The recap gained a
+Trips section (count, days away, date ranges, label when not travel) and a
+Shows section (concerts and sports, zero counts hidden), both after "Out of
+the house". Victoria Campground moved to Camping in the calendar.
+
 **Diary edit in place (#13):** a pencil on every diary row opens one inline
 form (title via the TMDB picker, platform, date, who, season or days, note,
 your own rating). Only changed columns are written. On calendar rows the

@@ -14,7 +14,9 @@
 #      that endpoint this job just logs and moves on.
 
 import asyncio
+import datetime
 import json
+import re
 import os
 import urllib.parse
 import urllib.request
@@ -277,6 +279,95 @@ def _artist_image(name):
     return ""
 
 
+_TRIP_CATEGORIES = ("travel", "camping", "beach")
+_FLIGHT_SUFFIX = re.compile(r"\s*[-\u2013\u2014:]\s*flights?\s*$", re.I)
+# "San Francisco Flight (Departure)" / "San Francisco Flight (Return)": the
+# trip's name is what comes before "Flight", the direction is in brackets.
+_LEG = re.compile(r"^(?P<name>.*?)\s*\bflights?\b\s*\((?P<dir>departure|return)\)\s*$", re.I)
+
+
+def _is_flight(ev):
+    return "flight" in (ev.get("title") or "").lower()
+
+
+def _is_trip(ev):
+    return (ev.get("category") or "").lower() in _TRIP_CATEGORIES
+
+
+def _span(ev):
+    start = datetime.date.fromisoformat(ev["date"])
+    return start, start + datetime.timedelta(days=int(ev.get("days") or 1) - 1)
+
+
+def _overlaps(a, b):
+    a0, a1 = _span(a)
+    b0, b1 = _span(b)
+    return a0 <= b1 and b0 <= a1
+
+
+def _owners(evs):
+    who = {e.get("owner") or "Both" for e in evs}
+    return who.pop() if len(who) == 1 else "Both"
+
+
+def _diary_events(events):
+    """The calendar's attended events, with flights turned into trips.
+
+    A flight is usually logistics for a trip that has its own event, and
+    importing it showed a second travel entry beside the trip. But trips also
+    arrive with no trip event at all, only flights, and skipping every flight
+    dropped those trips from the diary:
+
+    - one multi-day flight ("Philadelphia Mini Vacation - Flight", four days)
+      is the trip itself, unless a real trip event overlaps it;
+    - a departure and a return leg with the same name ("San Francisco Flight
+      (Departure)" / "(Return)") make the trip, from the departure day to the
+      return day, keyed on the departure leg's id;
+    - any other one-day trip-category event on a leg's day is another
+      person's booking of that leg ("Delta San Francisco") and goes in with it.
+
+    Only trip-category events count as "a real trip": a concert during the
+    trip is something done on it, not the trip."""
+    real_trips = [e for e in events if _is_trip(e) and not _is_flight(e)
+                  and int(e.get("days") or 1) > 1]
+    out, legs = [], []
+    for ev in events:
+        if not _is_flight(ev):
+            continue
+        if int(ev.get("days") or 1) > 1:
+            if not any(_overlaps(ev, t) for t in real_trips):
+                out.append({**ev, "title": _FLIGHT_SUFFIX.sub("", ev["title"]).strip()
+                            or ev["title"]})
+            continue
+        legs.append(ev)
+    leg_days = {ev["date"] for ev in legs}
+    companions = [e for e in events if not _is_flight(e) and _is_trip(e)
+                  and int(e.get("days") or 1) == 1 and e["date"] in leg_days]
+    taken = set()
+    for dep in sorted(legs, key=lambda e: e["date"]):
+        m = _LEG.match(dep["title"])
+        if not m or m["dir"].lower() != "departure" or dep["id"] in taken:
+            continue
+        name = m["name"].strip().lower()
+        ret = next((r for r in sorted(legs, key=lambda e: e["date"])
+                    if r["id"] not in taken and r["date"] >= dep["date"]
+                    and (rm := _LEG.match(r["title"])) and rm["dir"].lower() == "return"
+                    and rm["name"].strip().lower() == name), None)
+        if ret is None:
+            continue
+        taken |= {dep["id"], ret["id"]}
+        trip = {"id": f"trip{dep['id']}", "title": m["name"].strip(), "date": dep["date"],
+                "category": dep.get("category") or "travel",
+                "days": (datetime.date.fromisoformat(ret["date"])
+                         - datetime.date.fromisoformat(dep["date"])).days + 1}
+        if any(_overlaps(trip, t) for t in real_trips):
+            continue
+        party = [dep, ret] + [c for c in companions if c["date"] in (dep["date"], ret["date"])]
+        out.append({**trip, "owner": _owners(party)})
+    skip = {id(c) for c in companions}
+    return out + [e for e in events if not _is_flight(e) and id(e) not in skip]
+
+
 def sync_cinema(q, q1):
     """The calendar feed. Prefers the widened endpoint (cinema + attended
     events: concert/sports/travel/...); falls back to the original
@@ -291,14 +382,8 @@ def sync_cinema(q, q1):
             continue
     if events is None:
         return  # calendar down: next tick retries
-    import datetime
     today = str(datetime.date.today())
-    for ev in events:
-        # A flight is the logistics companion of a trip, never a trip of its
-        # own: a trip in the calendar carries a separate flight event, and it
-        # was showing up as a second travel entry alongside the trip itself.
-        if "flight" in (ev.get("title") or "").lower():
-            continue
+    for ev in _diary_events(events):
         key = f"cal:{ev['id']}"
         if ev.get("date", "9999") > today:
             continue  # future plans are not memories yet

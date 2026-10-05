@@ -63,7 +63,13 @@
 <section class="month">
   <h2>{{ month }}</h2>
   {% for w in rows %}
-  <div class="logrow">
+  {%- set my_r = w.rating_willian if who == 'Willian' else (w.rating_aline if who == 'Aline' else None) -%}
+  {%- set my_l = w.loved_willian if who == 'Willian' else (w.loved_aline if who == 'Aline' else False) -%}
+  <div class="logrow" data-id="{{ w.id }}" data-name="{{ w.name }}" data-year="{{ w.year or '' }}"
+       data-kind="{{ w.kind }}" data-platform="{{ w.platform }}" data-date="{{ w.watched_on.isoformat() }}"
+       data-who="{{ w.who }}" data-season="{{ w.season or '' }}" data-days="{{ w.days }}"
+       data-note="{{ w.note }}" data-activity="{{ w.activity }}" data-source="{{ w.source }}"
+       data-rating="{% if my_r %}{{ '5love' if (my_l and my_r == 5) else my_r }}{% endif %}">
     {% if w.poster %}<img class="thumb {% if w.activity %}round{% endif %}" src="{{ w.poster }}" alt="" loading="lazy">
     {% else %}<span class="thumb ph {% if w.activity %}round{% endif %}">{{ {'concert':'🎤','sports':'🏟️','travel':'✈️','camping':'🏕️','beach':'🏖️'}.get(w.activity, '🎬') }}</span>{% endif %}
     <span class="t">{{ w.name }}{% if w.season %} · S{{ w.season }} finished{% endif %}{% if w.days > 1 %} · {{ w.days }} days{% endif %}</span>
@@ -88,7 +94,15 @@
     {% endif %}
     {{ person(w.who) }}
     {% if w.source != 'manual' %}<span class="auto" title="Logged automatically from {{ w.source }}">auto</span>{% endif %}
+    {% if w.source == 'calendar' and w.edited_cols %}
+    <span class="auto edited" title="Changed by hand: {{ w.edited_cols | join(', ') | replace('_id', '') | replace('watched_on', 'date') }}. The calendar no longer overwrites these.">edited</span>
+    <form method="post" action="{{ base }}/watch/{{ w.id }}/reset" class="resetform">
+      <input type="hidden" name="back" value="{{ qs }}">
+      <button class="linkbtn" title="Let the calendar overwrite the edited fields again on its next sync">reset to calendar</button>
+    </form>
+    {% endif %}
     <span class="date">{{ w.watched_on.strftime('%b %d') }}</span>
+    <button type="button" class="editbtn" title="Edit this entry">✎</button>
     <form method="post" action="{{ base }}/watch/{{ w.id }}/delete" class="dismiss"
           onsubmit="return confirm('Remove this entry?')">
       <input type="hidden" name="back" value="{{ qs }}">
@@ -109,5 +123,77 @@ you watched".</p>
 {% endif %}
 {% endfor %}
 
+{# One edit form for the whole page, moved under whichever row's pencil was
+   pressed and filled from that row's data attributes. #}
+<form method="post" action="{{ base }}/watch/0/edit" class="logform editform" id="editform" hidden>
+  <input type="hidden" name="tmdb_id"><input type="hidden" name="kind">
+  <input type="hidden" name="back" value="{{ qs }}">
+  <div class="etitle"></div>
+  {{ tmdb_picker(base, "editform", "Change the title (optional)", true) }}
+  <div class="lrow">
+    <select name="platform" class="escreen">{% for p in platforms %}<option>{{ p }}</option>{% endfor %}</select>
+    <input type="date" name="watched_on" required>
+    <select name="who_watched">{% for p in people %}<option>{{ p }}</option>{% endfor %}</select>
+    <input name="days" class="eact" placeholder="days" inputmode="numeric">
+  </div>
+  <div class="lrow">
+    <input name="season" placeholder="season #" inputmode="numeric" class="seas seasonbox">
+    {% if who in ('Willian', 'Aline') %}
+    <select name="rating" title="Your own rating">
+      <option value="">no rating</option>
+      <option value="5love">★★★★★ ❤</option>
+      {% for i in [5,4,3,2,1] %}<option value="{{ i }}">{{ '★' * i }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <input name="note" placeholder="note">
+  </div>
+  <p class="ehint ecal">From the calendar: a title, date, who or days you change here
+  is kept on the next sync. Fixing the event in the calendar is the cleaner path.</p>
+  <div class="ebtns">
+    <button type="submit" class="go">Save</button>
+    <button type="button" class="ecancel">Cancel</button>
+  </div>
+</form>
+
 <script src="{{ base }}/static/picker.js"></script>
+<script>
+(() => {
+  const f = document.getElementById('editform');
+  const base = {{ base | tojson }};
+  const field = n => f.querySelector(`[name=${n}]`);
+  const show = (sel, on) => f.querySelectorAll(sel).forEach(e => { e.hidden = !on; });
+  document.querySelectorAll('.editbtn').forEach(btn => btn.addEventListener('click', () => {
+    const row = btn.closest('.logrow'), d = row.dataset;
+    if (!f.hidden && f.previousElementSibling === row) { f.hidden = true; return; }
+    row.after(f);
+    f.hidden = false;
+    f.action = `${base}/watch/${d.id}/edit`;
+    field('tmdb_id').value = '';
+    field('kind').value = d.kind;
+    f.querySelector('.pickq').value = '';
+    f.querySelector('.pickresults').innerHTML = '';
+    f.querySelector('.picked').textContent = '';
+    f.querySelector('.etitle').textContent = d.activity
+      ? `${d.name} · activity: ${d.activity}`
+      : `${d.name}${d.year ? ` (${d.year})` : ''}`;
+    const plat = field('platform');
+    if (![...plat.options].some(o => o.value === d.platform)) plat.add(new Option(d.platform));
+    plat.value = d.platform;
+    field('watched_on').value = d.date;
+    field('who_watched').value = d.who;
+    field('days').value = d.days;
+    field('season').value = d.season;
+    field('note').value = d.note;
+    const rating = field('rating');
+    if (rating) rating.value = d.rating;
+    show('.escreen', !d.activity);
+    show('.eact', !!d.activity);
+    show('.seasonbox', !d.activity && d.kind === 'series');
+    show('.ecal', d.source === 'calendar');
+    show('.picker', !d.activity);
+    f.querySelector('.go').disabled = false;
+  }));
+  f.querySelector('.ecancel').addEventListener('click', () => { f.hidden = true; });
+})();
+</script>
 {% endblock %}

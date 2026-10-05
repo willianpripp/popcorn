@@ -187,6 +187,11 @@ alter table watches add column if not exists loved_aline boolean not null defaul
 -- the same service could be stored under two names and split in the stats.
 -- Idempotent: after the first run nothing matches.
 update watches set platform = 'Prime Video' where platform = 'Prime';
+-- Columns a person changed by hand on an automatic row. The calendar sync
+-- rewrites title/date/who/activity/days on every tick; any column named here
+-- keeps the hand-made value instead, while the others still follow the event.
+-- Emptied by "reset to calendar".
+alter table watches add column if not exists edited_cols text[] not null default '{}';
 create index if not exists watches_month on watches (watched_on);
 """
 
@@ -474,6 +479,83 @@ def rate(request: Request, wid: int, rating: str = Form(...), back: str = Form("
     if cols and n and 1 <= n <= 5:
         q(f"update watches set {cols[0]} = %s, {cols[1]} = %s where id = %s",
           (n, loved, wid))
+    return RedirectResponse(base_of(request) + "/watched" + _diary_qs(back),
+                            status_code=303)
+
+
+# The columns the calendar sync rewrites on every tick. Changing one of them
+# in the edit form locks it on that row (watches.edited_cols), see poller.py.
+LOCKABLE = ("title_id", "watched_on", "who", "activity", "days")
+
+
+@app.post("/watch/{wid}/edit")
+def edit_watch(request: Request, wid: int, tmdb_id: str = Form(""),
+               kind: str = Form("movie"), platform: str = Form(""),
+               watched_on: str = Form(""), who_watched: str = Form(""),
+               season: str = Form(""), days: str = Form(""),
+               rating: str = Form(""), note: str = Form(""),
+               back: str = Form("")):
+    """Edit a diary row in place. Only columns whose value actually changed
+    are written, and only those are locked against the calendar sync, so
+    opening the form and pressing Save changes nothing."""
+    dest = RedirectResponse(base_of(request) + "/watched" + _diary_qs(back),
+                            status_code=303)
+    w = q1("select w.*, t.kind from watches w join titles t on t.id = w.title_id"
+           " where w.id = %s", (wid,))
+    if not w:
+        return dest
+    new: dict = {}
+    if tmdb_id.strip().isdigit():
+        t = upsert_title(int(tmdb_id), kind)
+        new["title_id"] = t["id"]
+        title_kind = t["kind"]
+    else:
+        title_kind = w["kind"]
+    try:
+        new["watched_on"] = date.fromisoformat(watched_on.strip())
+    except ValueError:
+        pass
+    if who_watched in PEOPLE:
+        new["who"] = who_watched
+    new["note"] = note.strip()
+    if w["activity"]:
+        # Attended events: days is theirs, platform stays "Live" and the
+        # activity itself is not editable (it moves the row between chips).
+        if days.strip().isdigit() and int(days) >= 1:
+            new["days"] = int(days)
+    else:
+        if platform.strip():
+            new["platform"] = platform.strip()
+        new["season"] = (int(season) if title_kind == "series"
+                         and season.strip().isdigit() else None)
+    # The rating and heart are the signed-in person's own, as in the rate
+    # select; an unmapped device edits nobody's.
+    me = who(request)
+    cols = {"Willian": ("rating_willian", "loved_willian"),
+            "Aline": ("rating_aline", "loved_aline")}.get(me)
+    if cols:
+        n, loved = _parse_rating(rating)
+        if n and 1 <= n <= 5:
+            new[cols[0]], new[cols[1]] = n, loved
+        elif not rating.strip():
+            new[cols[0]], new[cols[1]] = None, False
+    changed = {c: v for c, v in new.items() if v != w[c]}
+    if not changed:
+        return dest
+    locks = [c for c in changed if c in LOCKABLE]
+    sets = ", ".join(f"{c} = %s" for c in changed)
+    q(f"update watches set {sets}, edited_cols = array("
+      f"select distinct unnest(edited_cols || %s::text[])) where id = %s",
+      (*changed.values(), locks, wid))
+    return dest
+
+
+@app.post("/watch/{wid}/reset")
+def reset_watch(request: Request, wid: int, back: str = Form("")):
+    """Hand the edited fields of a calendar row back to the calendar: the
+    lock list empties and the next sync tick rewrites them from the event."""
+    q("update watches set edited_cols = '{}' where id = %s and source = 'calendar'",
+      (wid,))
     return RedirectResponse(base_of(request) + "/watched" + _diary_qs(back),
                             status_code=303)
 

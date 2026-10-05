@@ -368,6 +368,16 @@ def _diary_events(events):
     return out + [e for e in events if not _is_flight(e) and id(e) not in skip]
 
 
+def _unless_edited(*cols):
+    """SET list for the calendar upsert: each column follows the event unless
+    someone edited it by hand in the diary (watches.edited_cols), in which
+    case the stored value wins. Column names are literals from this module,
+    never user input."""
+    return ", ".join(
+        f"{c} = case when '{c}' = any(watches.edited_cols)"
+        f" then watches.{c} else excluded.{c} end" for c in cols)
+
+
 def sync_cinema(q, q1):
     """The calendar feed. Prefers the widened endpoint (cinema + attended
     events: concert/sports/travel/...); falls back to the original
@@ -393,8 +403,7 @@ def sync_cinema(q, q1):
             q("""insert into watches (title_id, platform, watched_on, who,
                  source, source_key) values (%s, 'Cinema', %s, %s, 'calendar', %s)
                  on conflict (source_key) do update
-                 set title_id = excluded.title_id,
-                     watched_on = excluded.watched_on, who = excluded.who""",
+                 set """ + _unless_edited("title_id", "watched_on", "who"),
               (tid, ev["date"], ev.get("owner") or "Both", key))
         else:
             t = _ensure_title(q, q1, ev["title"], None, "movie", 0)
@@ -403,15 +412,14 @@ def sync_cinema(q, q1):
                 if img:
                     q("update titles set poster = %s where id = %s", (img, t["id"]))
             # UPSERT, not insert-once: editing the event (dates stretched,
-            # title fixed, owner changed) updates the diary entry in place.
+            # title fixed, owner changed) updates the diary entry in place,
+            # except for the columns someone corrected by hand in the diary.
             q("""insert into watches (title_id, platform, watched_on, who,
                  source, source_key, activity, days) values (%s, 'Live', %s,
                  %s, 'calendar', %s, %s, %s)
                  on conflict (source_key) do update
-                 set title_id = excluded.title_id,
-                     watched_on = excluded.watched_on,
-                     who = excluded.who, activity = excluded.activity,
-                     days = excluded.days""",
+                 set """ + _unless_edited("title_id", "watched_on", "who",
+                                          "activity", "days"),
               (t["id"], ev["date"], ev.get("owner") or "Both", key, cat,
                int(ev.get("days") or 1)))
 

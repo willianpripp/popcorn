@@ -3,6 +3,15 @@
 A running record of what was built, what was decided, and what was
 deliberately left out. Newest first.
 
+**Diary edit in place (#13):** a pencil on every diary row opens one inline
+form (title via the TMDB picker, platform, date, who, season or days, note,
+your own rating). Only changed columns are written. On calendar rows the
+changed sync-fed columns go into `watches.edited_cols`, and the calendar
+upsert keeps those while still updating the rest; an "edited" chip with
+"reset to calendar" empties the list so the next tick restores them.
+Verified on a throwaway lab stack. Left out: a deleted automatic row comes
+back on the next poll (pre-existing, separate).
+
 **Friction round 2 (2026-08-15, evening):** person filter chips on the diary
 (Everyone/Willian/Aline/Together, person colors, same semantics as the
 recap, composes with type and genre, survives rate/delete round-trips). The

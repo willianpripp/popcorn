@@ -13,11 +13,13 @@
 </header>
 {% endmacro %}
 
-{% macro tmdb_picker(base, form_id, kindof) %}
+{% macro tmdb_picker(base, form_id, kindof, optional=false) %}
 {# Search-as-you-type against TMDB via the server proxy. Picking a result
    fills the hidden tmdb_id/kind fields of the surrounding form. No pick, no
-   submit: titles always come from TMDB so posters and runtimes are real. #}
-<div class="picker" data-form="{{ form_id }}">
+   submit: titles always come from TMDB so posters and runtimes are real.
+   "optional" (the edit form) also allows submitting with the box empty,
+   which keeps the title the row already has. #}
+<div class="picker" data-form="{{ form_id }}"{% if optional %} data-optional="1"{% endif %}>
   <input type="text" class="pickq" placeholder="{{ kindof }}" autocomplete="off">
   <div class="pickresults"></div>
   <div class="picked"></div>

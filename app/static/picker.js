@@ -6,12 +6,12 @@ document.querySelectorAll('.picker').forEach(picker => {
   const res = picker.querySelector('.pickresults');
   const picked = picker.querySelector('.picked');
   const go = form.querySelector('.go');
-  const basePath = form.getAttribute('action').replace(/\/(request|watch)$/, '');
+  const basePath = form.getAttribute('action').replace(/\/(request|watch(\/\d+\/edit)?)$/, '');
   let t;
   qEl.addEventListener('input', () => {
     clearTimeout(t);
     form.querySelector('[name=tmdb_id]').value = '';
-    go.disabled = true;
+    go.disabled = !(picker.dataset.optional && !qEl.value.trim());
     picked.textContent = '';
     t = setTimeout(async () => {
       const v = qEl.value.trim();

@@ -13,7 +13,9 @@ tabs instead of one.
   subscriptions.
 - **Diary**: what got watched, where, when, by whom, and how it was rated.
   Filled in automatically wherever it can be (a finished Jellyfin title, a
-  calendar event), and by hand for everything else.
+  calendar event), and by hand for everything else. Any entry can be edited
+  in place; a title, date or who changed by hand on a calendar entry stays
+  put on the next sync until "reset to calendar".
 - **Recap**: a per-year "wrapped", built to be screenshotted: hours watched,
   top platform and genre, a poster shelf, best-rated, loved, and a few fun
   facts.

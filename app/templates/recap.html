@@ -58,6 +58,40 @@
 </section>
 {% endif %}
 
+{% macro events(list) %}
+{% for e in list %}
+<div class="logrow">
+  {{ person(e.who) }}
+  <span class="t">{{ e.name }}</span>
+  {% if e.activity not in ('travel',) %}<span class="plat">{{ e.activity }}</span>{% endif %}
+  <span class="date">{{ e.when }}</span>
+</div>
+{% endfor %}
+{% endmacro %}
+
+{% if trips %}
+<section class="bestof">
+  <h2>Trips</h2>
+  <div class="kpis">
+    <div class="kpi"><div class="n">{{ trips | length }}</div><div class="l">{{ 'trip' if trips | length == 1 else 'trips' }}</div></div>
+    <div class="kpi"><div class="n">{{ trip_days }}</div><div class="l">days away</div></div>
+  </div>
+  {{ events(trips) }}
+</section>
+{% endif %}
+
+{% if shows %}
+<section class="bestof">
+  <h2>Shows</h2>
+  <div class="kpis">
+    {% for n, a in show_kpis %}
+    <div class="kpi"><div class="n">{{ n }}</div><div class="l">{{ {'concert': ('concert', 'concerts'), 'sports': ('sports event', 'sports events')}[a][0 if n == 1 else 1] }}</div></div>
+    {% endfor %}
+  </div>
+  {{ events(shows) }}
+</section>
+{% endif %}
+
 {% if months %}
 <section class="chart">
   <h2>By month</h2>

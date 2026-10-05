@@ -22,7 +22,7 @@ import re
 import time as systime
 import urllib.parse
 import urllib.request
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import FastAPI, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -506,6 +506,32 @@ def _top_genre(rs) -> str:
     return max(g.items(), key=lambda kv: kv[1])[0] if g else ""
 
 
+TRIP_ACTIVITIES = ("travel", "camping", "beach")
+SHOW_ACTIVITIES = ("concert", "sports")
+
+
+def _span(r) -> str:
+    """"Aug 9–13" for an event that runs several days, "Aug 9" for one day.
+    The end is start + days - 1; a range crossing a month names both months."""
+    start = r["watched_on"]
+    days = r["days"] or 1
+    first = f"{start:%b} {start.day}"
+    if days <= 1:
+        return first
+    end = start + timedelta(days=days - 1)
+    if end.month == start.month:
+        return f"{first}–{end.day}"
+    return f"{first} – {end:%b} {end.day}"
+
+
+def _events(rows, activities):
+    """Attended events of the given activities, as the recap lists them. Rows
+    arrive ordered by start date, and each counts once, in its start year."""
+    return [{"name": r["name"], "when": _span(r), "who": r["who"],
+             "activity": r["activity"], "days": r["days"] or 1}
+            for r in rows if r["activity"] in activities]
+
+
 def _avg(vals):
     vals = [v for v in vals if v]
     return round(sum(vals) / len(vals), 1) if vals else None
@@ -590,9 +616,15 @@ def recap(request: Request, year: int, whof: str = Query("", alias="who")):
         "topgen": topgen,
         "has_topgen": any(g for _, _, g in topgen),
     }
+    trips = _events(rows, TRIP_ACTIVITIES)
+    shows = _events(rows, SHOW_ACTIVITIES)
+    show_kpis = [(n, a) for a in SHOW_ACTIVITIES
+                 if (n := sum(1 for e in shows if e["activity"] == a))]
     years = [r["y"] for r in q(
         "select distinct extract(year from watched_on)::int y from watches order by y desc")]
     return templates.TemplateResponse(request, "recap.html", {
+        "trips": trips, "trip_days": sum(t["days"] for t in trips),
+        "shows": shows, "show_kpis": show_kpis,
         "request": request, "base": base_of(request), "tab": "recap",
         "year": year, "years": years, "count": sum(1 for r in rows if not r["activity"]), "hours": round(hours),
         "plat": sorted(plat.items(), key=lambda kv: -kv[1]),

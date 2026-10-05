@@ -85,7 +85,7 @@
   <h2>Shows</h2>
   <div class="kpis">
     {% for n, a in show_kpis %}
-    <div class="kpi"><div class="n">{{ n }}</div><div class="l">{{ a }}{{ '' if n == 1 else 's' }}</div></div>
+    <div class="kpi"><div class="n">{{ n }}</div><div class="l">{{ {'concert': ('concert', 'concerts'), 'sports': ('sports event', 'sports events')}[a][0 if n == 1 else 1] }}</div></div>
     {% endfor %}
   </div>
   {{ events(shows) }}

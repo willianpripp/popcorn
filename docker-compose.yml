@@ -1,7 +1,7 @@
 # Popcorn. Same shape as groceries/the family calendar: app + postgres.
 services:
   db:
-    image: postgres:17.10
+    image: postgres:17.11
     restart: unless-stopped
     environment:
       POSTGRES_USER: popcorn

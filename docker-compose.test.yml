@@ -1,0 +1,10 @@
+# The drift test needs no database, only Python and pytest. Run with:
+#   docker compose -f docker-compose.test.yml -p popcorn-test run --rm tests
+services:
+  tests:
+    image: python:3.13-slim
+    working_dir: /work
+    volumes:
+      - ./:/work
+    command: >
+      bash -c "pip install --no-cache-dir -r tests/requirements.txt && pytest -q"

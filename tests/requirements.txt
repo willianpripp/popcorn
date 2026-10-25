@@ -1,0 +1,2 @@
+# Test-only dependency. The drift test uses only the standard library.
+pytest==8.3.4

@@ -2,7 +2,7 @@
 #   docker compose -f docker-compose.test.yml -p popcorn-test run --rm tests
 services:
   tests:
-    image: python:3.13-slim
+    image: python:3.14-slim
     working_dir: /work
     volumes:
       - ./:/work

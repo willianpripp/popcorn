@@ -1,4 +1,4 @@
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 # uid 1000 matches the host owner of anything ever bind-mounted, the same
 # convention as the calendar.

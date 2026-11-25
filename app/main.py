@@ -18,7 +18,6 @@
 import asyncio
 import json
 import os
-import re
 import time as systime
 import urllib.parse
 import urllib.request
@@ -34,6 +33,7 @@ from psycopg_pool import ConnectionPool
 import discover
 import gate
 import poller
+import watchlist
 
 DSN = os.environ.get("POP_DSN", "postgresql://popcorn:popcorn@db:5432/popcorn")
 TMDB_KEY = os.environ.get("POP_TMDB_KEY", "")
@@ -45,16 +45,13 @@ IMG = "https://image.tmdb.org/t/p/w342"
 POP_PORTAL_URL = os.environ.get("POP_PORTAL_URL", "").strip()
 
 # Where a title was watched, for the logging dropdown. This is deliberately
-# wider than MY_SERVICES below: it lists services we do not pay for, because
-# something can be watched on a friend's account, a hotel television or a free
-# tier, and the diary should be able to say so.
+# wide: it lists services we do not pay for, because something can be watched
+# on a friend's account, a hotel television or a free tier, and the diary
+# should be able to say so.
 #
 # "Live" is here because four rows already carry it. It was reachable once, and
 # without it, editing one of those rows silently rewrites its platform to
 # whatever the dropdown defaults to.
-#
-# Names must match the labels MY_SERVICES emits, or the add flow can propose a
-# platform this dropdown does not contain.
 PLATFORMS = [
     "Jellyfin", "Cinema", "Live",
     # the household's own subscriptions
@@ -67,29 +64,6 @@ PLATFORMS = [
     "Other",
 ]
 
-# The household's actual subscriptions (Willian, 2026-08-15). The rule they
-# encode: if a picked title streams on one of these, it goes on the watchlist
-# with that service's name; if nowhere the family already pays for, it becomes
-# a Jellyfin request. Matched by substring against TMDB's US flatrate
-# provider names, lowercase.
-# Matched as whole words against TMDB's US flatrate provider names, lowercased.
-#
-# Whole words, not bare substrings, because the two are not the same question.
-# This previously keyed on "max " with a trailing space to stop it matching
-# inside "Cinemax", and that space meant it no longer matched the service at
-# all: HBO Max is called plain "Max" now, and "max " is not in "max". Every
-# title on Max was therefore read as something we cannot stream and turned into
-# a Jellyfin request. A word boundary excludes Cinemax without excluding Max.
-MY_SERVICES = {
-    "netflix": "Netflix",
-    "peacock": "Peacock",
-    "disney": "Disney+",
-    "hulu": "Hulu",
-    "apple tv": "Apple TV",
-    "max": "HBO Max",
-    "amazon prime": "Prime Video",
-    "crunchyroll": "Crunchyroll",
-}
 PEOPLE = ["Willian", "Aline", "Both"]
 
 # Diary filter chips (Willian, 2026-08-15). The semantics live here, in SQL,
@@ -144,20 +118,58 @@ create table if not exists requests (
     season int,
     requested_by text not null default '',
     requested_at timestamptz not null default now(),
-    status text not null default 'open',      -- open | available | dismissed
+    -- open | available | dismissed | later (Coming later: not out yet, or
+    -- still in theaters; a person turns it into a request on release day)
+    status text not null default 'open',
     available_at timestamptz,
     -- poller-written progress for partial seasons, e.g. "3/10 eps"
-    progress text not null default '',
-    -- empty = a Jellyfin request; a service name = a watchlist entry for
-    -- something already streamable ("Silo S3, Apple TV: just want to watch")
-    watch_on text not null default ''
+    progress text not null default ''
 );
-alter table requests add column if not exists watch_on text not null default '';
 alter table requests add column if not exists season int;
 alter table requests add column if not exists progress text not null default '';
 alter table requests drop constraint if exists requests_title_id_key;
 create unique index if not exists requests_title_season
     on requests (title_id, coalesce(season, 0));
+-- Jellyfin is the only library, so every row is a Jellyfin request. Where a
+-- title streams is information only, a comma list of service names.
+alter table requests add column if not exists streams text not null default '';
+-- Where someone stopped, typed by a person ("S3 E14 · “Party”") for a title
+-- watched elsewhere before it reached Jellyfin.
+alter table requests add column if not exists stopped_at text not null default '';
+-- Where the household stopped on Jellyfin, written by the poller (read only
+-- from Jellyfin): "S1 E9 · 8:48 in · W", and when that was played.
+alter table requests add column if not exists resume text not null default '';
+alter table requests add column if not exists resume_at timestamptz;
+-- Coming later: the date it can be had (US digital date for movies, else the
+-- theatrical one with release_kind 'theatrical'; the premiere for series).
+-- release_kind: digital | theatrical | premiere | '' (date unknown).
+alter table requests add column if not exists release_date date;
+alter table requests add column if not exists release_kind text not null default '';
+-- No arrival ping for this row: set on the rows converted from the old
+-- watchlist entries below, cleared the moment the row becomes available.
+alter table requests add column if not exists quiet boolean not null default false;
+-- One-time conversion from the watchlist-vs-request era. The guard is the old
+-- watch_on column itself: it is dropped at the end, so once this has run the
+-- block does nothing, and a database created after it never had the column.
+--   - a watchlist entry ("watch on Netflix") becomes a plain request with the
+--     service kept as information, and quiet, so its arrival on Jellyfin does
+--     not ping anyone for something they never asked Jellyfin for;
+--   - an open request for a title dated after this year waits in Coming
+--     later; the poller's daily job fills its release date from TMDB.
+do $$
+begin
+    if exists (select 1 from information_schema.columns
+               where table_schema = current_schema() and table_name = 'requests'
+                 and column_name = 'watch_on') then
+        update requests set streams = watch_on, quiet = true where watch_on <> '';
+        update requests r set status = 'later'
+          from titles t
+         where t.id = r.title_id and r.status = 'open'
+           and t.year > extract(year from current_date)::int;
+        alter table requests drop column watch_on;
+    end if;
+end
+$$;
 
 create table if not exists watches (
     id serial primary key,
@@ -288,23 +300,9 @@ def tmdb(path, **params):
 
 @app.get("/tmdb/providers")
 def tmdb_providers(tmdb_id: int, kind: str = "movie"):
-    """Where a title streams (US flatrate), split into services the household
-    has and everything else. Drives the add flow's watchlist-vs-request call."""
-    try:
-        res = tmdb(f"/{'movie' if kind == 'movie' else 'tv'}/{tmdb_id}/watch/providers")
-        flat = res.get("results", {}).get("US", {}).get("flatrate", [])
-    except Exception:
-        flat = []
-    mine, others = [], []
-    for p in flat:
-        name = p.get("provider_name", "")
-        hit = next((label for frag, label in MY_SERVICES.items()
-                    if re.search(r"\b%s\b" % re.escape(frag), name.lower())), None)
-        if hit and hit not in mine:
-            mine.append(hit)
-        elif not hit and name not in others:
-            others.append(name)
-    return JSONResponse({"mine": mine, "others": others[:4]})
+    """Where a title streams (US flatrate), shortened as Discover shows it.
+    Information only: whatever it says, the add is a Jellyfin request."""
+    return JSONResponse({"streams": poller.where_it_streams(kind, tmdb_id)})
 
 
 @app.get("/tmdb/search")
@@ -357,7 +355,17 @@ def who(request: Request) -> str:
     return "Both"
 
 
-# --- want to watch ----------------------------------------------------------------
+# --- watchlist --------------------------------------------------------------------
+
+
+def release_info(kind: str, tmdb_id: int, season=None, today=None):
+    """(later, release_date, release_kind) from TMDB, see watchlist.py.
+    Raises when TMDB cannot be asked; callers decide what that means."""
+    today = today or date.today()
+    if kind == "movie":
+        d = tmdb(f"/movie/{tmdb_id}", append_to_response="release_dates")
+        return watchlist.movie_release(d.get("release_dates"), d.get("release_date"), today)
+    return watchlist.series_release(tmdb(f"/tv/{tmdb_id}"), season, today)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -365,34 +373,89 @@ def index(request: Request):
     rows = q("""
         select r.*, t.name, t.year, t.kind, t.poster, t.genres
         from requests r join titles t on t.id = r.title_id
-        where r.status in ('open', 'available')
-        order by r.status = 'available' desc, r.requested_at desc""")
+        where r.status in ('open', 'available', 'later')
+        order by r.requested_at desc""")
+    today = date.today()
+    sections = {"available": [], "open": [], "later": []}
+    for r in rows:
+        r["streams_list"] = [x.strip() for x in r["streams"].split(",") if x.strip()]
+        if r["status"] == "later":
+            r["badge"], r["line"], r["out_now"] = watchlist.later_view(
+                r["release_date"], r["release_kind"], today)
+        sections[r["status"]].append(r)
+    # Coming later reads soonest first; a date still to be announced goes last.
+    sections["later"].sort(key=lambda r: (r["release_date"] is None, r["release_date"] or today))
     return templates.TemplateResponse(request, "index.html", {
-        "request": request, "base": base_of(request), "rows": rows,
-        "tab": "want", "who": who(request), "portal_url": POP_PORTAL_URL})
+        "request": request, "base": base_of(request), "sections": sections,
+        "tab": "watchlist", "who": who(request), "portal_url": POP_PORTAL_URL})
 
 
 @app.post("/request")
 def add_request(request: Request, tmdb_id: int = Form(...), kind: str = Form("movie"),
-                season: str = Form(""), watch_on: str = Form(""), back: str = Form("")):
+                season: str = Form(""), later: str = Form(""), back: str = Form("")):
+    """Every add is a Jellyfin request. A title that is not out yet waits in
+    Coming later instead; Discover's Remind me (later=1) always does."""
     t = upsert_title(tmdb_id, kind)
     sn = int(season) if season.strip().isdigit() else None
+    forced = later.strip() == "1"
+    try:
+        is_later, rdate, rkind = release_info(t["kind"], tmdb_id, sn)
+    except Exception:
+        # TMDB unreachable: a plain request is the safe default (the arrival
+        # check still runs); a Remind me still lands in Coming later, undated.
+        is_later, rdate, rkind = False, None, ""
+    status = "later" if (forced or is_later) else "open"
+    streams = ", ".join(poller.where_it_streams(t["kind"], tmdb_id))
     # A dismissed title can be requested again: revive the row rather than
     # letting the unique constraint eat the request silently (found by
-    # Willian with Constantine, 2026-08-15).
-    q("""insert into requests (title_id, season, requested_by, watch_on)
-         values (%s, %s, %s, %s)
+    # Willian with Constantine, 2026-08-15). A row that is open, later or
+    # available is left as it is.
+    q("""insert into requests (title_id, season, requested_by, status, streams,
+                               release_date, release_kind)
+         values (%s, %s, %s, %s, %s, %s, %s)
          on conflict (title_id, coalesce(season, 0)) do update
-         set status = 'open', requested_by = excluded.requested_by,
-             requested_at = now(), available_at = null,
-             watch_on = excluded.watch_on
+         set status = excluded.status, requested_by = excluded.requested_by,
+             requested_at = now(), available_at = null, progress = '',
+             streams = excluded.streams, release_date = excluded.release_date,
+             release_kind = excluded.release_kind, quiet = false,
+             resume = '', resume_at = null
          where requests.status = 'dismissed'""",
-      (t["id"], sn, who(request), watch_on.strip()))
-    # Jellyfin checks only make sense for jellyfin-bound requests.
-    if not watch_on.strip():
-        poller.check_one_request(q, q1, t, sn)
+      (t["id"], sn, who(request), status, streams, rdate, rkind))
+    poller.check_one_request(q, q1, t, sn)
     return RedirectResponse(base_of(request) + (discover.safe_back(back) or "/"),
                             status_code=303)
+
+
+@app.post("/request/{rid}/activate")
+def activate(request: Request, rid: int):
+    """Coming later -> a request, by a person's hand ("Request now"). Nothing
+    becomes a request by itself. The person is here, so the row pings again
+    on arrival even if it was a quiet one."""
+    r = q1("""update requests set status = 'open', requested_at = now(), quiet = false
+              where id = %s and status = 'later' returning title_id, season""", (rid,))
+    if r:
+        t = q1("select * from titles where id = %s", (r["title_id"],))
+        poller.check_one_request(q, q1, t, r["season"])
+    return RedirectResponse(base_of(request) + "/", status_code=303)
+
+
+@app.post("/request/{rid}/stopped")
+def set_stopped(request: Request, rid: int, stopped: str = Form("")):
+    """Where someone stopped, typed by hand. An episode code on a series gets
+    TMDB's episode name; free text is kept as typed; empty clears."""
+    r = q1("""select r.id, r.season, t.kind, t.tmdb_id from requests r
+              join titles t on t.id = r.title_id where r.id = %s""", (rid,))
+    if r:
+        name = ""
+        ep = watchlist.parse_episode(stopped)
+        if ep and r["kind"] == "series" and r["tmdb_id"] and TMDB_KEY:
+            try:
+                name = tmdb(f"/tv/{r['tmdb_id']}/season/{ep[0]}/episode/{ep[1]}").get("name") or ""
+            except Exception:
+                name = ""
+        q("update requests set stopped_at = %s where id = %s",
+          (watchlist.stopped_text(stopped, name), rid))
+    return RedirectResponse(base_of(request) + "/", status_code=303)
 
 
 @app.post("/request/{rid}/dismiss")
@@ -740,6 +803,8 @@ def recap(request: Request, year: int, whof: str = Query("", alias="who")):
 
 # --- discover ---------------------------------------------------------------------
 
+REQUEST_CHIPS = {"open": "Requested", "later": "Coming later", "available": "On Jellyfin"}
+
 _jf_ids = {"at": 0.0, "ids": set()}
 
 
@@ -787,11 +852,18 @@ def discover_page(request: Request, service: str = Query(discover.DEFAULT_SERVIC
                 from discover_cache where service in ('', %s) order by section, rank""",
              (service,))
     on_jf = jellyfin_tmdb_ids()
+    # A title that already has a request shows its state instead of a button.
+    state = {x["tmdb_id"]: x["status"] for x in q(
+        """select t.tmdb_id, r.status from requests r join titles t on t.id = r.title_id
+           where t.tmdb_id is not null and r.status in ('open', 'later', 'available')
+           order by r.status = 'later', r.status = 'open'""")}
     sections: dict = {}
     for r in rows:
         mode = {"theaters": "cinema", "ant_movies": "soon", "ant_series": "soon"}.get(r["section"], "")
         x = r["extra"] or {}
         r["jf"] = r["tmdb_id"] in on_jf
+        r["state"] = REQUEST_CHIPS.get(state.get(r["tmdb_id"]), "")
+        r["remind_season"] = watchlist.remind_season(x.get("sub")) if r["kind"] == "series" else None
         r["where"] = x.get("where") or ([service] if r["section"] == "popular" else [])
         r["sub"] = x.get("sub") or x.get("seasons") or ""
         r["net"] = x.get("net", "")

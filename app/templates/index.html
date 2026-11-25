@@ -1,5 +1,70 @@
 {% extends "base.html" %}
 {% from "_nav.html" import nav, tmdb_picker, person with context %}
+{% block title %}Watchlist · Popcorn{% endblock %}
+
+{% macro wcard(r, section) %}
+<article class="wcard{% if section == 'available' %} jf{% elif section == 'open' %} req{% endif %}">
+  <div class="art">
+    {% if r.poster %}<img src="{{ r.poster }}" alt="" loading="lazy">{% else %}<div class="noart">🎬</div>{% endif %}
+    <form method="post" action="{{ base }}/request/{{ r.id }}/dismiss" class="x">
+      <button title="Remove from the watchlist" aria-label="Remove {{ r.name }}">×</button>
+    </form>
+  </div>
+  <div class="dpt">
+    <div class="t">{{ r.name }}{% if r.season %} · S{{ r.season }}{% endif %}</div>
+    <div class="m">{{ [r.year, r.kind, (r.genres.split(',')[0] if r.genres else '')] | select | join(' · ') }}</div>
+    <div class="dbadges">
+      {% if section == 'available' %}<span class="dbadge d-jf">On Jellyfin</span>
+      {% elif section == 'open' %}
+        {% if r.progress %}<span class="dbadge d-part">{{ r.progress }} on Jellyfin</span>
+        {% else %}<span class="dbadge d-req">Requested</span>{% endif %}
+      {% else %}
+        <span class="dbadge {{ 'd-jf' if r.out_now else 'd-cine' if r.badge == 'In theaters' else 'd-soon' }}">{{ r.badge }}</span>
+      {% endif %}
+      {% for s in r.streams_list %}<span class="dbadge d-where" title="Streams on {{ s }}">{{ s }}</span>{% endfor %}
+      {{ person(r.requested_by) }}
+    </div>
+    {% if section == 'available' %}
+      <div class="resume">
+        {% if r.resume %}<span>⏵ {{ r.resume }}</span><span class="auto">from Jellyfin</span>
+        {% elif r.stopped_at %}<span class="stopped">Start at <b>{{ r.stopped_at }}</b></span>
+        {% else %}<span class="none">Not started</span>{% endif %}
+      </div>
+    {% elif section == 'open' %}
+      <details class="resume stopedit">
+        <summary>
+          {% if r.stopped_at %}<span class="stopped">Stopped at <b>{{ r.stopped_at }}</b></span>
+          {% else %}<span class="none">Where you stopped: none</span>{% endif %}
+          <span class="pen" title="Edit where you stopped" aria-label="Edit where you stopped">✎</span>
+        </summary>
+        <form method="post" action="{{ base }}/request/{{ r.id }}/stopped" class="stopform">
+          <input name="stopped" value="{{ r.stopped_at }}" maxlength="80"
+                 placeholder="{{ 'S3E14' if r.kind == 'series' else 'e.g. 1:12' }}"
+                 aria-label="Where you stopped">
+          <button type="submit" class="go sm">Save</button>
+        </form>
+      </details>
+    {% else %}
+      <div class="resume"><span class="none">{{ r.line }}</span></div>
+      {% if r.out_now %}
+      <form method="post" action="{{ base }}/request/{{ r.id }}/activate" class="dact">
+        <button type="submit" class="go sm">Request now</button>
+      </form>
+      {% endif %}
+    {% endif %}
+  </div>
+</article>
+{% endmacro %}
+
+{% macro wsection(key, title, src, empty) %}
+{% set rows = sections[key] %}
+<section class="dsec">
+  <div class="dsechead"><h2>{{ title }}</h2><span class="count">{{ rows | length }}</span><span class="src">{{ src }}</span></div>
+  {% if rows %}<div class="wgrid">{% for r in rows %}{{ wcard(r, key) }}{% endfor %}</div>
+  {% else %}<p class="empty">{{ empty }}</p>{% endif %}
+</section>
+{% endmacro %}
+
 {% block content %}
 {{ nav(base, tab, portal_url) }}
 
@@ -8,38 +73,20 @@
   {{ tmdb_picker(base, "reqform", "Request a movie or series…") }}
   {# Only shown once a series is picked (picker.js): "I saw S1 and S2, bring
      me S3". Empty = the whole series. #}
-  <input type="hidden" name="watch_on">
   <input name="season" class="seasonbox" placeholder="season #" inputmode="numeric" hidden>
   <div class="availrow" id="availrow" hidden></div>
   <button type="submit" class="go" disabled>Request for Jellyfin</button>
 </form>
+<p class="hint">Jellyfin is the library: everything added here is a request. Already on
+Jellyfin, it goes straight to <b>On Jellyfin</b>. Not out yet, it waits in
+<b>Coming later</b> and says <b>Out now</b> on release day.</p>
 
-<main class="grid">
-  {% for r in rows %}
-  <div class="poster {% if r.status == 'available' %}have{% endif %}">
-    {% if r.poster %}<img src="{{ r.poster }}" alt="" loading="lazy">
-    {% else %}<div class="noart">🎬</div>{% endif %}
-    <div class="pt">
-      <div class="t">{{ r.name }}{% if r.season %} · S{{ r.season }}{% endif %}</div>
-      <div class="m">{{ r.year or '' }} · {{ r.kind }}{% if r.genres %} · {{ r.genres.split(',')[0] }}{% endif %}</div>
-      {% if r.watch_on %}
-      <span class="badge b-stream">watch on {{ r.watch_on }}</span> {{ person(r.requested_by) }}
-      {% elif r.status == 'available' %}
-      <span class="badge b-have">on Jellyfin</span> {{ person(r.requested_by) }}
-      {% else %}
-      <span class="badge b-want">requested</span> {{ person(r.requested_by) }}
-      {% if r.progress %}<span class="badge b-part">{{ r.progress }} on jellyfin</span>{% endif %}
-      {% endif %}
-      <form method="post" action="{{ base }}/request/{{ r.id }}/dismiss" class="dismiss">
-        <button title="Remove from the queue">×</button>
-      </form>
-    </div>
-  </div>
-  {% else %}
-  <p class="empty">Nothing requested yet. Search above; if it is already on
-  Jellyfin the card says so instead of queueing it.</p>
-  {% endfor %}
-</main>
+{{ wsection('available', 'On Jellyfin', 'Ready to play. Where you stopped comes from Jellyfin.',
+            'Nothing requested has arrived yet.') }}
+{{ wsection('open', 'Requested', 'Waiting to be added to Jellyfin. Moves up when it arrives.',
+            'No open requests. Search above to add one.') }}
+{{ wsection('later', 'Coming later', 'Still in theaters or not released. Request it when it is out.',
+            'Nothing waiting for a release. Remind me on Discover puts upcoming titles here.') }}
 
 <script src="{{ base }}/static/picker.js"></script>
 {% endblock %}

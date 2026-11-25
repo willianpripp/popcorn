@@ -20,13 +20,22 @@
       {% else %}{% for w in it.where %}<span class="dbadge d-where">{{ w }}</span>{% endfor %}{% endif %}
       {% if not it.jf and it.mode != 'cinema' and not it.net and not it.where %}<span class="dbadge d-none">{{ "Rent or buy" if it.section == "left_theaters" else "Not streaming" }}</span>{% endif %}
     </div>
-    {% if not it.jf and not it.mode and it.tmdb_id %}
+    {% if it.state %}
+    <div class="dact"><span class="dstate">✓ {{ it.state }}</span></div>
+    {% elif not it.jf and it.tmdb_id %}
+    {# In theaters and anticipated cards remind (Coming later, never a request
+       on their own); the rest request. Anticipated series carry the season. #}
     <form method="post" action="{{ base }}/request" class="dact">
       <input type="hidden" name="tmdb_id" value="{{ it.tmdb_id }}">
       <input type="hidden" name="kind" value="{{ it.kind }}">
-      <input type="hidden" name="watch_on" value="">
       <input type="hidden" name="back" value="{{ back }}">
+      {% if it.mode %}
+      <input type="hidden" name="later" value="1">
+      {% if it.remind_season %}<input type="hidden" name="season" value="{{ it.remind_season }}">{% endif %}
+      <button type="submit" class="go sm alt">Remind me</button>
+      {% else %}
       <button type="submit" class="go sm">Request</button>
+      {% endif %}
     </form>
     {% endif %}
   </div>

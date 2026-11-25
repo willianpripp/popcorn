@@ -2,16 +2,21 @@
 # nice" — so nothing here asks for confirmation, and every entry it writes
 # can be deleted in the UI (delete IS the undo).
 #
-# Three jobs (plus a daily fourth, Discover, below), every 15 minutes, all idempotent through watches.source_key:
+# Four jobs every 15 minutes (plus two daily ones, Discover and Coming later
+# dates, below). The diary ones are idempotent through watches.source_key:
 #   1. Jellyfin finishes: movies a user played, and series seasons where every
 #      episode is played, become diary entries (source 'jellyfin', key
 #      'jf:<user>:<item>' / 'jf:<user>:<series>:s<season>').
-#   2. Request arrivals: an open request whose title now exists in the
-#      Jellyfin library flips to 'available' and pings the requester's phone
-#      through the household bot.
-#   3. Calendar Cinema events (source 'calendar', key 'cal:<event id>'), read
+#   2. Request arrivals: an open (or Coming later) request whose title now
+#      exists in the Jellyfin library flips to 'available' and pings the
+#      requester's phone through the household bot, unless the row is quiet.
+#   3. Where you stopped: for available requests, the latest playback
+#      position of a household Jellyfin user, read only.
+#   4. Calendar Cinema events (source 'calendar', key 'cal:<event id>'), read
 #      from the calendar's /api/cinema on the LAN. Until the calendar ships
 #      that endpoint this job just logs and moves on.
+#
+# Every Jellyfin call in this file is a GET: Popcorn never writes to Jellyfin.
 
 import asyncio
 import datetime
@@ -22,6 +27,7 @@ import urllib.parse
 import urllib.request
 
 import discover
+import watchlist
 
 # No defaults on purpose: a stranger cloning this has neither a Jellyfin nor
 # a calendar to point at, and the app must still come up and be usable
@@ -62,10 +68,15 @@ def telegram(chat_name: str, text: str):
 # --- jellyfin library matching ----------------------------------------------------
 
 
-def library_index():
+def library_items():
+    return jf("/Items", IncludeItemTypes="Movie,Series", Recursive="true",
+              fields="ProductionYear,ProviderIds")["Items"]
+
+
+def library_index(items=None):
     """name.lower() + year -> item, for movies and series."""
-    items = jf("/Items", IncludeItemTypes="Movie,Series", Recursive="true",
-               fields="ProductionYear")["Items"]
+    if items is None:
+        items = library_items()
     idx = {}
     for it in items:
         idx[(it["Name"].strip().lower(), it.get("ProductionYear"))] = it
@@ -120,8 +131,8 @@ def check_one_request(q, q1, title, season=None):
              "tmdb_id": title.get("tmdb_id"), "season": season}
         ready, progress = _request_ready(idx, r)
         if ready:
-            q("update requests set status = 'available', available_at = now()"
-              " where title_id = %s and coalesce(season, 0) = %s and status = 'open'",
+            q("update requests set status = 'available', available_at = now(), quiet = false"
+              " where title_id = %s and coalesce(season, 0) = %s and status in ('open', 'later')",
               (title["id"], season or 0))
         elif progress:
             q("update requests set progress = %s where title_id = %s"
@@ -131,10 +142,13 @@ def check_one_request(q, q1, title, season=None):
 
 
 def sync_arrivals(q, q1):
-    rows = q("""select r.id, r.season, r.requested_by, t.name, t.year,
+    """Every open request, and every Coming later one (a title can reach
+    Jellyfin before anyone presses Request now). A quiet row flips without a
+    ping and stops being quiet."""
+    rows = q("""select r.id, r.season, r.requested_by, r.quiet, t.name, t.year,
                        t.tmdb_id, t.id title_id
                 from requests r join titles t on t.id = r.title_id
-                where r.status = 'open' and r.watch_on = ''""")
+                where r.status in ('open', 'later')""")
     if not rows:
         return
     idx = library_index()
@@ -142,12 +156,109 @@ def sync_arrivals(q, q1):
         ready, progress = _request_ready(idx, r)
         if ready:
             q("update requests set status = 'available', available_at = now(),"
-              " progress = '' where id = %s", (r["id"],))
+              " progress = '', quiet = false where id = %s", (r["id"],))
+            if r["quiet"]:
+                continue
             label = r["name"] + (f" S{r['season']}" if r["season"] else "")
             telegram(r["requested_by"],
                      "🍿 %s is on Jellyfin now (you asked for it)" % label)
         else:
             q("update requests set progress = %s where id = %s", (progress, r["id"]))
+
+
+# --- where you stopped ---------------------------------------------------------------
+
+
+def _find_item(items, r):
+    """The library item for a request: by TMDB id when Jellyfin has one
+    (typed, since a movie and a series can share a TMDB number), else by name
+    and year like the arrival matching."""
+    want = "Series" if r["kind"] == "series" else "Movie"
+    if r["tmdb_id"]:
+        for it in items:
+            tid = str((it.get("ProviderIds") or {}).get("Tmdb", ""))
+            if it.get("Type") == want and tid.isdigit() and int(tid) == int(r["tmdb_id"]):
+                return it
+    name = r["name"].strip().lower()
+    same = [it for it in items if it.get("Type") == want and it["Name"].strip().lower() == name]
+    return (next((it for it in same if it.get("ProductionYear") == r["year"]), None)
+            or (same[0] if same else None))
+
+
+def _user_resume(item, kind, uid):
+    """(played_at, text) for one Jellyfin user, or (None, "")."""
+    if kind == "series":
+        eps = jf(f"/Shows/{item['Id']}/Episodes", userId=uid,
+                 fields="UserDataLastPlayedDate")["Items"]
+        played = [watchlist.played_at((e.get("UserData") or {}).get("LastPlayedDate"))
+                  for e in eps]
+        played = [p for p in played if p]
+        if not played:
+            return None, ""
+        nxt = jf("/Shows/NextUp", SeriesId=item["Id"], UserId=uid, EnableUserData="true")
+        return max(played), watchlist.series_resume(nxt, played_any=True)
+    ud = jf(f"/Users/{uid}/Items/{item['Id']}").get("UserData") or {}
+    return watchlist.played_at(ud.get("LastPlayedDate")), watchlist.movie_resume(ud)
+
+
+def sync_resume(q, q1):
+    """Where the household stopped, for titles that are on Jellyfin. The most
+    recent position across the household's Jellyfin users wins, with that
+    person's initial. A title nobody has played reads empty; a title that is
+    not found in the library keeps what it had."""
+    rows = q("""select r.id, r.resume, r.resume_at, t.kind, t.tmdb_id, t.name, t.year
+                from requests r join titles t on t.id = r.title_id
+                where r.status = 'available'""")
+    if not rows:
+        return
+    items = library_items()
+    users = _person_users()
+    for r in rows:
+        try:
+            item = _find_item(items, r)
+            if not item:
+                continue
+            cands = []
+            for person, uid in users.items():
+                at, text = _user_resume(item, r["kind"], uid)
+                cands.append((at, text, person))
+            text, at = watchlist.latest_resume(cands)
+            q("""update requests set resume = %s, resume_at = %s::timestamptz
+                 where id = %s and (resume <> %s or resume_at is distinct from %s::timestamptz)""",
+              (text, at, r["id"], text, at))
+        except Exception as e:
+            print(f"popcorn poller: resume {r['name']}: {e}")
+
+
+# --- coming later dates ---------------------------------------------------------------
+# Release dates move (a digital date gets announced, a premiere slips), so the
+# Coming later rows re-read theirs from TMDB once a day. Only the date
+# changes: nothing turns into a request by itself, the page shows "Out now"
+# and a person presses Request now.
+
+LATER_EVERY_H = 20
+_later_attempt = 0.0
+
+
+def sync_later_dates(q, q1):
+    import main
+    import time
+    global _later_attempt
+    if not main.TMDB_KEY or time.time() - _later_attempt < LATER_EVERY_H * 3600:
+        return
+    _later_attempt = time.time()
+    rows = q("""select r.id, r.season, r.release_date, r.release_kind, t.kind, t.tmdb_id, t.name
+                from requests r join titles t on t.id = r.title_id
+                where r.status = 'later' and t.tmdb_id is not null""")
+    for r in rows:
+        try:
+            _, rdate, rkind = main.release_info(r["kind"], r["tmdb_id"], r["season"])
+        except Exception as e:
+            print(f"popcorn poller: release date {r['name']}: {e}")
+            continue
+        if (rdate, rkind) != (r["release_date"], r["release_kind"]):
+            q("update requests set release_date = %s, release_kind = %s where id = %s",
+              (rdate, rkind, r["id"]))
 
 
 # --- jellyfin finishes --------------------------------------------------------------
@@ -469,7 +580,7 @@ def _replace_group(q, section, service, rows):
     print(f"popcorn poller: discover {section}/{service or '-'}: {len(rows)} rows")
 
 
-def _where(kind, tmdb_id):
+def where_it_streams(kind, tmdb_id):
     import main
     try:
         res = main.tmdb(f"/{'movie' if kind == 'movie' else 'tv'}/{tmdb_id}/watch/providers")
@@ -481,7 +592,7 @@ def _where(kind, tmdb_id):
 
 def _with_where(rows):
     for r in rows:
-        r["extra"]["where"] = _where(r["kind"], r["tmdb_id"])
+        r["extra"]["where"] = where_it_streams(r["kind"], r["tmdb_id"])
     return rows
 
 
@@ -652,21 +763,22 @@ async def loop(q, q1):
     have_tmdb = bool(os.environ.get("POP_TMDB_KEY", ""))
     if not have_jf:
         print("popcorn poller: POP_JF_URL/POP_JF_KEY unset; Jellyfin sync"
-              " (finishes + request arrivals) disabled")
+              " (finishes, request arrivals, where you stopped) disabled")
     if not have_cal:
         print("popcorn poller: POP_CAL_API/POP_CAL_API_WIDE unset; calendar"
               " Cinema/attended sync disabled")
     if not have_tmdb:
-        print("popcorn poller: POP_TMDB_KEY unset; Discover refresh disabled")
+        print("popcorn poller: POP_TMDB_KEY unset; Discover refresh and Coming"
+              " later dates disabled")
     if not (have_jf or have_cal or have_tmdb):
         return
     jobs = []
     if have_jf:
-        jobs += [sync_jellyfin_watches, sync_arrivals]
+        jobs += [sync_jellyfin_watches, sync_arrivals, sync_resume]
     if have_cal:
         jobs.append(sync_cinema)
     if have_tmdb:
-        jobs.append(sync_discover)
+        jobs += [sync_discover, sync_later_dates]
     await asyncio.sleep(10)
     while True:
         for job in jobs:

@@ -11,12 +11,11 @@ tabs instead of one.
   Netflix's official Top 10 so the page never waits on an outside API:
   popular on each major streaming service, in theaters, just left theaters,
   and the most anticipated movies and series. A card says "On Jellyfin" when
-  the title is already in the library, and otherwise offers one button to
-  request it.
-- **Want to watch**: search TMDB, pick a result, and the app decides for you
-  whether that becomes a Jellyfin request or a plain watchlist entry, by
-  checking where the title actually streams against the household's own
-  subscriptions.
+  the title is already in the library, and otherwise offers one button:
+  Request, or Remind me for what is in theaters or not out yet.
+- **Watchlist**: search TMDB, pick a result, and it becomes a Jellyfin
+  request. Three sections: On Jellyfin (with where you stopped), Requested,
+  and Coming later for titles that are not out yet.
 - **Diary**: what got watched, where, when, by whom, and how it was rated.
   Filled in automatically wherever it can be (a finished Jellyfin title, a
   calendar event), and by hand for everything else. Any entry can be edited
@@ -49,8 +48,8 @@ Then open <http://127.0.0.1:3040>. The demo data in `demo/seed.sql` is
 invented: a few months of a plausible household diary (movies, series by
 season, a couple of cinema visits, a concert, a sports outing, a trip), rated
 by both people with at least one title "loved" by each, plus a request queue
-mixing open Jellyfin requests, one already available, and a couple of
-watchlist entries for things already streaming somewhere. `make demo-reset`
+with titles on Jellyfin, open requests (one partly arrived) and two Coming
+later titles, one of them out. `make demo-reset`
 puts it back.
 
 Without TMDB, Jellyfin or calendar credentials configured, the request and
@@ -84,14 +83,29 @@ model is the part most worth copying:
 
 ## What is interesting in here
 
-**Watchlist vs. request, decided by what you already pay for.** Picking a
-TMDB result queries its US streaming providers and matches them against the
-household's own service list (`MY_SERVICES` in `app/main.py`). A title
-streaming on one of those becomes a watchlist entry tagged with that
-service; everything else becomes a Jellyfin request. The distinction is not
-cosmetic: a request gets checked against the Jellyfin library and pings
-whoever asked for it once it lands, a watchlist entry never does, because
-there is nothing for the app to fetch.
+**Jellyfin is the library: everything is a request.** Picking a TMDB result
+always queues a Jellyfin request. Where the title streams (TMDB's US flatrate
+providers) is stored and shown as information only, never as a destination,
+so there is one path: every request is checked against the Jellyfin library
+and pings whoever asked once it lands.
+
+**Coming later.** A title that is not out yet does not become a request
+Jellyfin cannot fill. A movie with no past US digital, physical or TV release
+and a date still ahead, or a series or season whose premiere is in the
+future, waits in Coming later with its release date (for movies the US
+digital date when TMDB has one, otherwise the theatrical date with the digital
+one "TBA"). Discover's Remind me always puts a title there. The poller
+re-reads those dates once a day; on the day it is out the card says "Out now"
+and offers Request now. Nothing turns into a request by itself: a person
+presses the button.
+
+**Where you stopped.** On Jellyfin titles it comes from Jellyfin playback,
+read only: for a series the next-up episode of each household Jellyfin user
+("S1 E9 · 8:48 in" when it was started, "Next: S1 E10" when not), for a movie
+its playback position, and the most recent one across users wins, with the
+person's initial. On a request you can type where you stopped watching it
+elsewhere ("s3e14" is stored as "S3 E14 · “Episode name”" from TMDB), and once
+the title is on Jellyfin the card offers it as where to start.
 
 **Per-person ratings, and the option above five stars.** `rating_willian`
 and `rating_aline` are separate columns, and the rate control on a diary row
@@ -164,11 +178,12 @@ does not.
 ```
 popcorn/
 ├── app/
-│   ├── main.py           # routes, schema, TMDB proxy, the watchlist-vs-request rule
+│   ├── main.py           # routes, schema, TMDB proxy, requests and Coming later
 │   ├── poller.py         # the automatic feeds: Jellyfin finishes, request arrivals,
-│   │                     # calendar events, the daily Discover refresh; each source is
-│   │                     # independently optional
+│   │                     # where you stopped, calendar events, the daily Discover and
+│   │                     # release-date refreshes; each source is independently optional
 │   ├── discover.py       # pure Discover logic: Netflix Top 10 merge, link guard
+│   ├── watchlist.py      # pure Watchlist logic: release dates, episode codes, resume text
 │   ├── gate.py           # who is trusted, who needs a password
 │   └── templates/        # Jinja, phone-first CSS with a desktop breakpoint
 ├── demo/seed.sql         # the invented request queue and diary used by `make demo`

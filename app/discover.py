@@ -47,6 +47,10 @@ def shorten_providers(names, limit=2):
         key = (n or "").strip().lower()
         if not key or key in _DROP:
             continue
+        # "HBO Max Amazon Channel", "Starz Roku Premium Channel": a subscription
+        # bought through another store, not a service of its own.
+        if key.endswith(" channel"):
+            continue
         s = _SHORT.get(key) or _SHORT.get(_ADS.sub("", key)) or _ADS.sub("", n.strip())
         if s not in out:
             out.append(s)

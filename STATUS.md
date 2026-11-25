@@ -3,6 +3,34 @@
 A running record of what was built, what was decided, and what was
 deliberately left out. Newest first.
 
+**Watchlist, PR 2 (2026-11-25).** Jellyfin is now the household's only
+library, so the watchlist-vs-request rule is gone (`MY_SERVICES`, `watch_on`
+and the watchlist branch of `/request`): every add is a Jellyfin request, and
+where it streams is stored in `requests.streams` as information only. `/` is
+the Watchlist tab with three sections: On Jellyfin (where you stopped, read
+from Jellyfin playback by the poller into `resume`/`resume_at`, the most recent
+household user wins with their initial), Requested (partial-season badge,
+streams, a typed "stopped at" with an inline edit that normalizes "s3e14" and
+adds TMDB's episode name), and Coming later (new status `later`, with
+`release_date` and `release_kind`). A title not out yet goes to Coming later on
+add; Discover's Remind me on in-theaters and anticipated cards always does,
+with the season from the anticipated-series card. Discover cards of titles that
+already have a request show a state chip instead of a button. The poller now
+checks every open and later row for arrival, writes resume every tick, and
+re-reads Coming later dates once a day (in memory, so also on each restart).
+On release day a card says Out now and offers Request now; nothing becomes a
+request by itself. The one-time migration, guarded by the `watch_on` column it
+drops: old watchlist entries become requests with the service in `streams` and
+`quiet = true`, so their arrival on Jellyfin pings nobody (quiet clears when the
+row flips); open requests for a title dated after this year move to Coming
+later, dated by the next daily run. Popcorn only reads Jellyfin, never writes
+to it. Pure logic is in `app/watchlist.py` with tests. Not verified: the
+migration, the SQL and the Jellyfin/TMDB calls have no test here (no database
+or keys on the build machine), so the first start on the real stack is the
+check. `release_kind` is a column beyond the plan: without it a past
+theatrical date would read as "Out now". The README screenshot still shows the
+old request page.
+
 **Discover tab, PR 1 (2026-11-25).** A new first tab, `/discover`, built from
 a cache table (`discover_cache`) that the poller refills once a day, so the page
 never waits on TMDB. "Popular now on streaming" has a chip per service (Netflix,

@@ -161,3 +161,8 @@ def test_latest_resume_keeps_the_most_recent_with_the_initial():
     assert w.latest_resume(cands) == ("Next: S1 E4 · A", "2026-11-22T10:00:00+00:00")
     assert w.latest_resume([(None, "", "willian"), (None, "", "aline")]) == ("", None)
     assert w.latest_resume([]) == ("", None)
+
+
+def test_store_channels_are_not_services():
+    import discover
+    assert discover.shorten_providers(["Prime Video", "HBO Max Amazon Channel", "Apple TV Amazon Channel", "Hulu"]) == ["Prime Video", "Hulu"]

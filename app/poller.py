@@ -452,17 +452,20 @@ def _row(kind, rank, item, **extra):
 
 
 def _replace_group(q, section, service, rows):
-    """Swap a whole (section, service) group atomically. An empty fetch keeps
+    """Swap a whole (section, service, kind) group atomically: popular writes
+    movies and series per service in two calls, so the delete is per kind. An empty fetch keeps
     the old rows (a TMDB hiccup must not blank a shelf)."""
     if not rows:
         print(f"popcorn poller: discover {section}/{service or '-'}: 0 rows, kept old")
         return
-    q("""with gone as (delete from discover_cache where section = %(s)s and service = %(v)s)
+    q("""with gone as (delete from discover_cache where section = %(s)s and service = %(v)s
+                        and kind = any(%(k)s))
          insert into discover_cache (section, service, kind, rank, tmdb_id, name, date, poster, extra)
          select %(s)s, %(v)s, r.kind, r.rank, r.tmdb_id, r.name, r.date, r.poster, r.extra
          from jsonb_to_recordset(%(rows)s::jsonb) as r(kind text, rank int, tmdb_id bigint,
               name text, date text, poster text, extra jsonb)""",
-      {"s": section, "v": service, "rows": json.dumps(rows)})
+      {"s": section, "v": service, "rows": json.dumps(rows),
+       "k": sorted({r["kind"] for r in rows})})
     print(f"popcorn poller: discover {section}/{service or '-'}: {len(rows)} rows")
 
 
@@ -589,7 +592,7 @@ def sync_discover(q, q1):
         "/watch/providers/movie", watch_region="US").get("results", [])})
     nf_fresh = q1("""select 1 from discover_cache where section = 'popular' and service = 'Netflix'
                      and extra->>'official' = 'true' and fetched_at > now() - make_interval(days => %s)
-                     limit 1""", (discover.NETFLIX_EVERY_D,))
+                     limit 1""", (NETFLIX_EVERY_D,))
     for service, pid in discover.SERVICES:
         if service == "Netflix" and nf_fresh:
             continue

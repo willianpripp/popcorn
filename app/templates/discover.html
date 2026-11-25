@@ -18,7 +18,7 @@
       {% if it.sub == 'New series' %}<span class="dbadge d-new">New series</span>{% endif %}
       {% if it.net %}<span class="dbadge d-where">{{ it.net }}</span>
       {% else %}{% for w in it.where %}<span class="dbadge d-where">{{ w }}</span>{% endfor %}{% endif %}
-      {% if not it.jf and it.mode != 'cinema' and not it.net and not it.where %}<span class="dbadge d-none">Not streaming</span>{% endif %}
+      {% if not it.jf and it.mode != 'cinema' and not it.net and not it.where %}<span class="dbadge d-none">{{ "Rent or buy" if it.section == "left_theaters" else "Not streaming" }}</span>{% endif %}
     </div>
     {% if not it.jf and not it.mode and it.tmdb_id %}
     <form method="post" action="{{ base }}/request" class="dact">

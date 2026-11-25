@@ -4,9 +4,15 @@
 
 A household's movie and series watchlist and watch diary, built around one
 observation: wanting to watch something and having watched something are two
-different lists, and most trackers conflate them. So Popcorn keeps three
+different lists, and most trackers conflate them. So Popcorn keeps separate
 tabs instead of one.
 
+- **Discover**: what is worth watching now, filled in once a day from TMDB and
+  Netflix's official Top 10 so the page never waits on an outside API:
+  popular on each major streaming service, in theaters, just left theaters,
+  and the most anticipated movies and series. A card says "On Jellyfin" when
+  the title is already in the library, and otherwise offers one button to
+  request it.
 - **Want to watch**: search TMDB, pick a result, and the app decides for you
   whether that becomes a Jellyfin request or a plain watchlist entry, by
   checking where the title actually streams against the household's own
@@ -126,6 +132,17 @@ login, one cookie everywhere), and every URL a template emits is built from
 `X-Forwarded-Prefix`, which is what lets the same deployment answer both on
 its own port and as a path behind a router.
 
+**Netflix's Top 10 ranks seasons, the other services have no Top 10.**
+Netflix publishes an official weekly Top 10 file, but it lists every season of
+a show as its own row, so one series can take three of the ten places. Discover
+parses the US rows of the latest week and merges rows of the same show into one
+card at its best rank, labelled with the seasons that charted ("S1–S3", or
+"S1, S3" when they are not contiguous), then renumbers. No other service
+publishes a Top 10, so their tabs are an approximation, labelled as such: the
+most popular titles on TMDB that stream there, released in the last year (series:
+the last two). Each tab links to FlixPatrol's chart for the real ranking; the app
+never fetches it.
+
 ## Stack
 
 | Layer | Choice | Why |
@@ -149,7 +166,9 @@ popcorn/
 ├── app/
 │   ├── main.py           # routes, schema, TMDB proxy, the watchlist-vs-request rule
 │   ├── poller.py         # the automatic feeds: Jellyfin finishes, request arrivals,
-│   │                     # calendar events; each source is independently optional
+│   │                     # calendar events, the daily Discover refresh; each source is
+│   │                     # independently optional
+│   ├── discover.py       # pure Discover logic: Netflix Top 10 merge, link guard
 │   ├── gate.py           # who is trusted, who needs a password
 │   └── templates/        # Jinja, phone-first CSS with a desktop breakpoint
 ├── demo/seed.sql         # the invented request queue and diary used by `make demo`

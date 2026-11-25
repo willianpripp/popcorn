@@ -3,6 +3,28 @@
 A running record of what was built, what was decided, and what was
 deliberately left out. Newest first.
 
+**Discover tab, PR 1 (2026-11-25).** A new first tab, `/discover`, built from
+a cache table (`discover_cache`) that the poller refills once a day, so the page
+never waits on TMDB. "Popular now on streaming" has a chip per service (Netflix,
+Prime Video, Disney+, HBO Max, Hulu, Paramount+, Apple TV, Peacock, Crunchyroll)
+with a Movies and a Series shelf. Below it, Movies (in theaters, just left
+theaters, most anticipated) and Series (new, most anticipated with the season
+or "New series" and the network). Netflix comes from its official Top 10 file,
+US, latest week, with seasons of one show merged into one card at its best rank
+and renumbered; it is refetched at most every 6 days and falls back to the TMDB
+popularity query (marked not official) if the file fails. The other services
+are a labelled approximation with a FlixPatrol link. A card is "On Jellyfin"
+when its TMDB id is in the library (cached 15 minutes; Jellyfin down just marks
+nothing), otherwise it has a Request button posting to `/request` with a
+`back` that only honors a relative `/discover` path. The Discover job runs
+whenever `POP_TMDB_KEY` is set, even with no Jellyfin or calendar. Pure logic
+(TSV parse, merge, provider shortening, redirect guard) is in `app/discover.py`
+with tests. Not verified: the SQL and the TMDB calls have no test here (no
+database or key on the build machine), so the first daily run on the real stack
+is the check; read its per-section row counts in the app log. Left for the next
+PRs: Remind me on upcoming titles and in-theaters cards (no button yet), the
+Watchlist reshaping. `/` stays the want-to-watch page.
+
 **Flight-only trips and the recap's Trips/Shows (2026-10-03/04, #11, #12).**
 A trip entered only as its flights was dropped, because every event with
 "flight" in the title was skipped. Now a multi-day flight with no trip event

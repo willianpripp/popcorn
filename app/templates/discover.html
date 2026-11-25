@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% from "_nav.html" import nav with context %}
+{% block title %}Discover · Popcorn{% endblock %}
+
+{% macro card(it, back) %}
+<article class="dcard{% if it.jf %} jf{% endif %}">
+  <div class="art">
+    {% if it.poster %}<img src="{{ it.poster }}" alt="" loading="lazy">{% else %}<div class="noart">🎬</div>{% endif %}
+    {% if it.section == 'popular' %}<span class="rank">{{ it.rank }}</span>{% endif %}
+    {% if it.when %}<span class="when">{{ it.when }}</span>{% endif %}
+  </div>
+  <div class="dpt">
+    <div class="t">{{ it.name }}</div>
+    <div class="m">{{ [it.shown_date, it.sub or ('movie' if it.kind == 'movie' else 'series')] | select | join(' · ') }}</div>
+    <div class="dbadges">
+      {% if it.jf %}<span class="dbadge d-jf">On Jellyfin</span>
+      {% elif it.mode == 'cinema' %}<span class="dbadge d-cine">In theaters</span>{% endif %}
+      {% if it.sub == 'New series' %}<span class="dbadge d-new">New series</span>{% endif %}
+      {% if it.net %}<span class="dbadge d-where">{{ it.net }}</span>
+      {% else %}{% for w in it.where %}<span class="dbadge d-where">{{ w }}</span>{% endfor %}{% endif %}
+      {% if not it.jf and it.mode != 'cinema' and not it.net and not it.where %}<span class="dbadge d-none">{{ "Rent or buy" if it.section == "left_theaters" else "Not streaming" }}</span>{% endif %}
+    </div>
+    {% if not it.jf and not it.mode and it.tmdb_id %}
+    <form method="post" action="{{ base }}/request" class="dact">
+      <input type="hidden" name="tmdb_id" value="{{ it.tmdb_id }}">
+      <input type="hidden" name="kind" value="{{ it.kind }}">
+      <input type="hidden" name="watch_on" value="">
+      <input type="hidden" name="back" value="{{ back }}">
+      <button type="submit" class="go sm">Request</button>
+    </form>
+    {% endif %}
+  </div>
+</article>
+{% endmacro %}
+
+{% macro shelf(items, back, empty='Nothing here yet.') %}
+{% if items %}<div class="dshelf">{% for it in items %}{{ card(it, back) }}{% endfor %}</div>
+{% else %}<p class="empty">{{ empty }}</p>{% endif %}
+{% endmacro %}
+
+{% block content %}
+{{ nav(base, tab, portal_url) }}
+{% set back = '/discover?service=' ~ (service | urlencode) %}
+
+{% if empty %}
+<section class="dempty">
+  <div class="ico">🍿</div>
+  <h2>Discover fills in after the first daily refresh</h2>
+  <p>The shelves come from TMDB and Netflix's Top 10, fetched once a day in the
+  background so this page is always fast. Check back shortly.</p>
+</section>
+{% else %}
+<section class="dsec">
+  <div class="dsechead"><h2>Popular now on streaming</h2></div>
+  <div class="dsvc" role="group" aria-label="Streaming service">
+    {% for s in services %}<a class="chip{% if s == service %} on{% endif %}" href="{{ base }}/discover?service={{ s | urlencode }}"{% if s == service %} aria-current="true"{% endif %}>{{ s }}</a>{% endfor %}
+  </div>
+  <p class="dnote">
+    {% if official %}<span class="dofficial">Official Top 10</span> Netflix US, week of {{ week }}. Netflix ranks each season of a show separately, so seasons of one show are merged into one card at its best rank.
+    {% else %}<span class="dapprox">Approximation</span> Most popular on TMDB among {{ service }} titles released in the last year (series: premiered in the last 2 years). {{ service }} publishes no Top 10.
+    {% endif %}
+    <a class="fplink" href="{{ fp_url }}" target="_blank" rel="noopener">See today's real Top 10 on FlixPatrol ↗</a>
+  </p>
+  <div class="dsub">Movies</div>
+  {{ shelf(sections.get('pop_movie'), back) }}
+  <div class="dsub">Series</div>
+  {{ shelf(sections.get('pop_series'), back) }}
+</section>
+
+<div class="dgroup">
+  <p class="gtitle">Movies</p>
+  <section class="dsec">
+    <div class="dsechead"><h2>In theaters now</h2><span class="src">US, most popular first</span></div>
+    {{ shelf(sections.get('theaters'), back) }}
+  </section>
+  <section class="dsec">
+    <div class="dsechead"><h2>Just left theaters</h2><span class="src">Out on digital or streaming in the last 45 days</span></div>
+    {{ shelf(sections.get('left_theaters'), back) }}
+  </section>
+  <section class="dsec">
+    <div class="dsechead"><h2>Most anticipated movies</h2><span class="src">Next 4 months, soonest first</span></div>
+    {{ shelf(sections.get('ant_movies'), back) }}
+  </section>
+</div>
+
+<div class="dgroup">
+  <p class="gtitle">Series</p>
+  <section class="dsec">
+    <div class="dsechead"><h2>New series</h2><span class="src">Premiered in the last 45 days</span></div>
+    {{ shelf(sections.get('new_series'), back) }}
+  </section>
+  <section class="dsec">
+    <div class="dsechead"><h2>Most anticipated series and new seasons</h2><span class="src">Premieres in the next 5 months, soonest first</span></div>
+    {{ shelf(sections.get('ant_series'), back) }}
+  </section>
+</div>
+{% endif %}
+{% endblock %}

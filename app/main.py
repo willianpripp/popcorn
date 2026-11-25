@@ -31,6 +31,7 @@ from fastapi.templating import Jinja2Templates
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
+import discover
 import gate
 import poller
 
@@ -193,6 +194,23 @@ update watches set platform = 'Prime Video' where platform = 'Prime';
 -- Emptied by "reset to calendar".
 alter table watches add column if not exists edited_cols text[] not null default '{}';
 create index if not exists watches_month on watches (watched_on);
+
+-- The Discover tab's shelves, filled once a day by the poller so the page
+-- never waits on TMDB. One (section, service) group is replaced as a unit;
+-- service is '' for the sections that are not per streaming service.
+create table if not exists discover_cache (
+    section text not null,
+    service text not null default '',
+    kind text not null,                        -- movie | series
+    rank int not null,
+    tmdb_id bigint,
+    name text not null,
+    date text not null default '',
+    poster text not null default '',
+    extra jsonb not null default '{}',
+    fetched_at timestamptz not null default now()
+);
+create index if not exists discover_cache_group on discover_cache (section, service, rank);
 """
 
 pool = ConnectionPool(DSN, min_size=1, max_size=4, open=False)
@@ -356,7 +374,7 @@ def index(request: Request):
 
 @app.post("/request")
 def add_request(request: Request, tmdb_id: int = Form(...), kind: str = Form("movie"),
-                season: str = Form(""), watch_on: str = Form("")):
+                season: str = Form(""), watch_on: str = Form(""), back: str = Form("")):
     t = upsert_title(tmdb_id, kind)
     sn = int(season) if season.strip().isdigit() else None
     # A dismissed title can be requested again: revive the row rather than
@@ -373,7 +391,8 @@ def add_request(request: Request, tmdb_id: int = Form(...), kind: str = Form("mo
     # Jellyfin checks only make sense for jellyfin-bound requests.
     if not watch_on.strip():
         poller.check_one_request(q, q1, t, sn)
-    return RedirectResponse(base_of(request) + "/", status_code=303)
+    return RedirectResponse(base_of(request) + (discover.safe_back(back) or "/"),
+                            status_code=303)
 
 
 @app.post("/request/{rid}/dismiss")
@@ -717,6 +736,79 @@ def recap(request: Request, year: int, whof: str = Query("", alias="who")):
         "whos": sorted(whos.items(), key=lambda kv: -kv[1]),
         "who_chips": WHO_CHIPS, "sel_who": whof,
         "who": who(request), "portal_url": POP_PORTAL_URL})
+
+
+# --- discover ---------------------------------------------------------------------
+
+_jf_ids = {"at": 0.0, "ids": set()}
+
+
+def jellyfin_tmdb_ids() -> set:
+    """TMDB ids of the Jellyfin library's movies and series, cached 15 minutes.
+    Jellyfin unset or down gives an empty set: nothing is marked, the page
+    still renders (a failed refresh is retried after a minute, not per view)."""
+    now = systime.time()
+    if now - _jf_ids["at"] < 900:
+        return _jf_ids["ids"]
+    if not (poller.JF and poller.JF_KEY):
+        return set()
+    try:
+        items = poller.jf("/Items", IncludeItemTypes="Movie,Series", Recursive="true",
+                          Fields="ProviderIds")["Items"]
+        _jf_ids["ids"] = {int(i["ProviderIds"]["Tmdb"]) for i in items
+                          if str(i.get("ProviderIds", {}).get("Tmdb", "")).isdigit()}
+        _jf_ids["at"] = now
+    except Exception:
+        _jf_ids["at"] = now - 900 + 60
+    return _jf_ids["ids"]
+
+
+def _fmt_date(d: str) -> str:
+    try:
+        x = date.fromisoformat(d)
+    except ValueError:
+        return d[:4]
+    return x.strftime("%b ") + str(x.day) + ("" if x.year == date.today().year else f", {x.year}")
+
+
+def _days_chip(d: str) -> str:
+    try:
+        n = (date.fromisoformat(d) - date.today()).days
+    except ValueError:
+        return ""
+    return "Out now" if n <= 0 else "Tomorrow" if n == 1 else f"In {n} days"
+
+
+@app.get("/discover", response_class=HTMLResponse)
+def discover_page(request: Request, service: str = Query(discover.DEFAULT_SERVICE)):
+    if service not in discover.SERVICE_NAMES:
+        service = discover.DEFAULT_SERVICE
+    rows = q("""select section, service, kind, rank, tmdb_id, name, date, poster, extra
+                from discover_cache where service in ('', %s) order by section, rank""",
+             (service,))
+    on_jf = jellyfin_tmdb_ids()
+    sections: dict = {}
+    for r in rows:
+        mode = {"theaters": "cinema", "ant_movies": "soon", "ant_series": "soon"}.get(r["section"], "")
+        x = r["extra"] or {}
+        r["jf"] = r["tmdb_id"] in on_jf
+        r["where"] = x.get("where") or ([service] if r["section"] == "popular" else [])
+        r["sub"] = x.get("sub") or x.get("seasons") or ""
+        r["net"] = x.get("net", "")
+        r["mode"] = mode
+        r["shown_date"] = _fmt_date(r["date"]) if mode else r["date"][:4]
+        r["when"] = _days_chip(r["date"]) if mode == "soon" else ""
+        sections.setdefault(r["section"] if r["section"] != "popular" else "pop_" + r["kind"], []).append(r)
+    pop = (sections.get("pop_movie", []) + sections.get("pop_series", []))
+    official = bool(pop) and service == "Netflix" and all(
+        (p["extra"] or {}).get("official") for p in pop)
+    week = discover.week_range(pop[0]["extra"]["week"]) if official and pop[0]["extra"].get("week") else ""
+    return templates.TemplateResponse(request, "discover.html", {
+        "request": request, "base": base_of(request), "tab": "discover",
+        "who": who(request), "portal_url": POP_PORTAL_URL,
+        "services": discover.SERVICE_NAMES, "service": service,
+        "sections": sections, "empty": not rows, "official": official, "week": week,
+        "fp_url": discover.flixpatrol_url(service)})
 
 
 # --- the front door (public visitors only; see gate.py) ---------------------------

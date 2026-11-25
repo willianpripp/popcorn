@@ -2,7 +2,7 @@
 # nice" — so nothing here asks for confirmation, and every entry it writes
 # can be deleted in the UI (delete IS the undo).
 #
-# Three jobs, every 15 minutes, all idempotent through watches.source_key:
+# Three jobs (plus a daily fourth, Discover, below), every 15 minutes, all idempotent through watches.source_key:
 #   1. Jellyfin finishes: movies a user played, and series seasons where every
 #      episode is played, become diary entries (source 'jellyfin', key
 #      'jf:<user>:<item>' / 'jf:<user>:<series>:s<season>').
@@ -20,6 +20,8 @@ import re
 import os
 import urllib.parse
 import urllib.request
+
+import discover
 
 # No defaults on purpose: a stranger cloning this has neither a Jellyfin nor
 # a calendar to point at, and the app must still come up and be usable
@@ -424,6 +426,222 @@ def sync_cinema(q, q1):
                int(ev.get("days") or 1)))
 
 
+# --- discover cache ----------------------------------------------------------------
+# One job, once a day, that needs only TMDB: it fills discover_cache so the
+# Discover page never waits on an outside API. A (section, service) group is
+# replaced in ONE statement (a data-modifying CTE), so a failed fetch leaves
+# the old rows and a half-written group never shows.
+
+DISCOVER_EVERY_H = 20
+NETFLIX_EVERY_D = 6
+_discover_attempt = 0.0   # monotonic-ish guard so a failing run is not retried every tick
+_DISCOVER_RETRY_S = 3600
+
+
+def _poster(path):
+    import main
+    return (main.IMG + path) if path else ""
+
+
+def _row(kind, rank, item, **extra):
+    """A cache row from a TMDB list item (movie or tv)."""
+    return {"kind": kind, "rank": rank, "tmdb_id": item["id"],
+            "name": item.get("title") or item.get("name") or "?",
+            "date": item.get("release_date") or item.get("first_air_date") or "",
+            "poster": _poster(item.get("poster_path")), "extra": extra}
+
+
+def _replace_group(q, section, service, rows):
+    """Swap a whole (section, service, kind) group atomically: popular writes
+    movies and series per service in two calls, so the delete is per kind. An empty fetch keeps
+    the old rows (a TMDB hiccup must not blank a shelf)."""
+    if not rows:
+        print(f"popcorn poller: discover {section}/{service or '-'}: 0 rows, kept old")
+        return
+    q("""with gone as (delete from discover_cache where section = %(s)s and service = %(v)s
+                        and kind = any(%(k)s))
+         insert into discover_cache (section, service, kind, rank, tmdb_id, name, date, poster, extra)
+         select %(s)s, %(v)s, r.kind, r.rank, r.tmdb_id, r.name, r.date, r.poster, r.extra
+         from jsonb_to_recordset(%(rows)s::jsonb) as r(kind text, rank int, tmdb_id bigint,
+              name text, date text, poster text, extra jsonb)""",
+      {"s": section, "v": service, "rows": json.dumps(rows),
+       "k": sorted({r["kind"] for r in rows})})
+    print(f"popcorn poller: discover {section}/{service or '-'}: {len(rows)} rows")
+
+
+def _where(kind, tmdb_id):
+    import main
+    try:
+        res = main.tmdb(f"/{'movie' if kind == 'movie' else 'tv'}/{tmdb_id}/watch/providers")
+        flat = res.get("results", {}).get("US", {}).get("flatrate", [])
+        return discover.shorten_providers([p.get("provider_name", "") for p in flat])
+    except Exception:
+        return []
+
+
+def _with_where(rows):
+    for r in rows:
+        r["extra"]["where"] = _where(r["kind"], r["tmdb_id"])
+    return rows
+
+
+def _netflix_official(q):
+    """Netflix's own Top 10 (US, latest week), TMDB-matched. Raises on any
+    failure so the caller can fall back to the popularity query."""
+    import main
+    req = urllib.request.Request(discover.NETFLIX_TOP10_URL,
+                                 headers={"User-Agent": "popcorn-discover"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        week, films, shows = discover.parse_netflix_tsv(
+            line.decode("utf-8", "replace") for line in r)
+
+    def match(kind, name):
+        path = "/search/movie" if kind == "movie" else "/search/tv"
+        try:
+            hits = main.tmdb(path, query=name, include_adult="false").get("results", [])
+        except Exception:
+            hits = []
+        return hits[0] if hits else None
+
+    out = {"movie": [], "series": []}
+    for kind, items in (("movie", films), ("series", shows)):
+        for it in items:
+            hit = match(kind, it["name"]) or {}
+            row = _row(kind, it["rank"], {"id": hit.get("id"), **{k: hit.get(k) for k in (
+                "title", "name", "release_date", "first_air_date", "poster_path")}},
+                official=True, week=week, **({"seasons": it["sub"]} if it.get("sub") else {}))
+            row["name"] = it["name"]          # Netflix's title, not TMDB's first guess
+            out[kind].append(row)
+    return out
+
+
+def _popular(kind, provider, today):
+    import main
+    common = {"watch_region": "US", "with_watch_providers": provider,
+              "with_watch_monetization_types": "flatrate",
+              "sort_by": "popularity.desc", "without_genres": "10767,10763"}
+    if kind == "movie":
+        res = main.tmdb("/discover/movie", **common, **{
+            "primary_release_date.gte": str(today - datetime.timedelta(days=365))})
+    else:
+        res = main.tmdb("/discover/tv", **common, **{
+            "first_air_date.gte": str(today - datetime.timedelta(days=730))})
+    return [_row(kind, i, it) for i, it in enumerate(res.get("results", [])[:10], 1)]
+
+
+def _ant_series(today):
+    import main
+    tomorrow = today + datetime.timedelta(days=1)
+    rows = []
+    for page in range(1, 9):
+        res = main.tmdb("/discover/tv", **{
+            "air_date.gte": str(tomorrow), "air_date.lte": str(today + datetime.timedelta(days=150)),
+            "with_original_language": "en", "without_genres": "10767,10763,10762,10764,10766",
+            "sort_by": "popularity.desc", "page": page})
+        for it in res.get("results", []):
+            try:
+                d = main.tmdb(f"/tv/{it['id']}")
+            except Exception:
+                continue
+            nxt = d.get("next_episode_to_air") or {}
+            if nxt.get("episode_number") != 1 or (nxt.get("air_date") or "") <= str(today):
+                continue
+            sn = nxt.get("season_number") or 1
+            nets = d.get("networks") or []
+            rows.append(_row("series", 0, {**it, "first_air_date": nxt["air_date"]},
+                             sub="New series" if sn == 1 else f"Season {sn}",
+                             net=nets[0]["name"] if nets else ""))
+            if len(rows) >= 14:
+                break
+        if len(rows) >= 14 or page >= res.get("total_pages", 1):
+            break
+    rows.sort(key=lambda r: r["date"])
+    for i, r in enumerate(rows, 1):
+        r["rank"] = i
+    return rows
+
+
+def _guard(name, fn):
+    """One section failing must not stop the others."""
+    try:
+        return fn()
+    except Exception as e:
+        print(f"popcorn poller: discover {name}: {e}")
+        return None
+
+
+def sync_discover(q, q1):
+    import main
+    global _discover_attempt
+    if not main.TMDB_KEY:
+        return
+    import time
+    if time.time() - _discover_attempt < _DISCOVER_RETRY_S:
+        return
+    last = q1("select max(fetched_at) t, extract(epoch from now() - max(fetched_at)) / 3600 h"
+              " from discover_cache")
+    if last and last["h"] is not None and last["h"] < DISCOVER_EVERY_H:
+        return
+    _discover_attempt = time.time()
+    today = datetime.date.today()
+    tomorrow = today + datetime.timedelta(days=1)
+    ago45 = today - datetime.timedelta(days=45)
+
+    # provider ids: verify once, skip (not fail) a service that disappeared
+    live = _guard("providers", lambda: {p["provider_id"] for p in main.tmdb(
+        "/watch/providers/movie", watch_region="US").get("results", [])})
+    nf_fresh = q1("""select 1 from discover_cache where section = 'popular' and service = 'Netflix'
+                     and extra->>'official' = 'true' and fetched_at > now() - make_interval(days => %s)
+                     limit 1""", (NETFLIX_EVERY_D,))
+    for service, pid in discover.SERVICES:
+        if service == "Netflix" and nf_fresh:
+            continue
+        if live is not None and pid not in live:
+            print(f"popcorn poller: discover: provider {pid} ({service}) gone from TMDB, skipped")
+            continue
+        got = None
+        if service == "Netflix":
+            got = _guard("netflix official", lambda: _netflix_official(q))
+            if got and not (got["movie"] or got["series"]):
+                got = None
+        if got is None:
+            got = {k: _guard(f"popular {service} {k}", lambda k=k: _popular(k, pid, today))
+                   for k in ("movie", "series")}
+            if service == "Netflix":
+                for rows in got.values():
+                    for r in rows or []:
+                        r["extra"]["official"] = False
+        for kind in ("movie", "series"):
+            _replace_group(q, "popular", service, got.get(kind) or [])
+
+    def disc_movie(**p):
+        return main.tmdb("/discover/movie", **p).get("results", [])[:10]
+
+    sections = {
+        "theaters": lambda: [_row("movie", i, it) for i, it in enumerate(
+            main.tmdb("/movie/now_playing", region="US").get("results", [])[:10], 1)],
+        "left_theaters": lambda: _with_where([_row("movie", i, it, ) for i, it in enumerate(disc_movie(
+            region="US", with_release_type=4, sort_by="popularity.desc",
+            **{"release_date.gte": str(ago45), "release_date.lte": str(today)}), 1)]),
+        "new_series": lambda: _with_where([_row("series", i, it) for i, it in enumerate(
+            main.tmdb("/discover/tv", with_original_language="en", sort_by="popularity.desc",
+                      **{"first_air_date.gte": str(ago45), "first_air_date.lte": str(today)}
+                      ).get("results", [])[:10], 1)]),
+        "ant_movies": lambda: sorted(
+            [_row("movie", 0, it) for it in disc_movie(
+                region="US", with_release_type="2|3", sort_by="popularity.desc",
+                **{"primary_release_date.gte": str(tomorrow),
+                   "primary_release_date.lte": str(today + datetime.timedelta(days=120))})],
+            key=lambda r: r["date"]),
+        "ant_series": lambda: _with_where(_ant_series(today)),
+    }
+    for name, fn in sections.items():
+        rows = _guard(name, fn) or []
+        for i, r in enumerate(rows, 1):
+            r["rank"] = i
+        _replace_group(q, name, "", rows)
+
+
 async def loop(q, q1):
     # Each integration is independently optional: a stranger with no
     # Jellyfin still gets the calendar feed if they have one (and vice
@@ -431,19 +649,24 @@ async def loop(q, q1):
     # rather than crashing or spinning uselessly.
     have_jf = bool(JF and JF_KEY)
     have_cal = bool(CAL_API or CAL_API_WIDE)
+    have_tmdb = bool(os.environ.get("POP_TMDB_KEY", ""))
     if not have_jf:
         print("popcorn poller: POP_JF_URL/POP_JF_KEY unset; Jellyfin sync"
               " (finishes + request arrivals) disabled")
     if not have_cal:
         print("popcorn poller: POP_CAL_API/POP_CAL_API_WIDE unset; calendar"
               " Cinema/attended sync disabled")
-    if not (have_jf or have_cal):
+    if not have_tmdb:
+        print("popcorn poller: POP_TMDB_KEY unset; Discover refresh disabled")
+    if not (have_jf or have_cal or have_tmdb):
         return
     jobs = []
     if have_jf:
         jobs += [sync_jellyfin_watches, sync_arrivals]
     if have_cal:
         jobs.append(sync_cinema)
+    if have_tmdb:
+        jobs.append(sync_discover)
     await asyncio.sleep(10)
     while True:
         for job in jobs:
